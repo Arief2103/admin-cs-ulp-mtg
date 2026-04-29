@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CleanAdmin - Master User</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .sidebar-active { background-color: #075E3D; color: white; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden bg-gray-50">
+
+    <!-- SIDEBAR CONTAINER -->
+    <div id="sidebar"></div>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        
+        <!-- NAVBAR CONTAINER -->
+        <div id="navbar"></div>
+
+        <div class="flex-1 overflow-y-auto p-8">
+            <div class="flex items-center justify-between mb-8">
+                <div>
+                    <h1 class="text-3xl font-black text-gray-900 tracking-tight">Master User</h1>
+                    <p class="text-gray-400 font-medium">Manajemen cleaner dan tim operasional.</p>
+                </div>
+            </div>
+
+            <!-- FORM TAMBAH USER -->
+            <div class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm mb-10">
+                <h3 class="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                    <i data-lucide="user-plus" class="text-[#075E3D] w-5 h-5"></i>
+                    Tambah Users Baru
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Nama Lengkap</label>
+                        <input id="name" placeholder="name" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Alamat Email</label>
+                        <input id="email" placeholder="name@gmail.com" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Password Akses</label>
+                        <input id="password" type="password" placeholder="••••••••" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
+                    </div>
+                </div>
+                <div class="flex justify-end mt-6">
+                    <button onclick="tambahUser()" class="bg-[#075E3D] text-white px-10 py-4 rounded-2xl font-bold shadow-lg shadow-green-900/20 hover:scale-105 active:scale-95 transition-all">
+                        Daftarkan User
+                    </button>
+                </div>
+            </div>
+
+            <!-- LIST USER -->
+            <div id="userList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Data akan dimuat dari JS -->
+            </div>
+        </div>
+    </main>
+
+    <!-- MODAL EDIT -->
+    <div id="editModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+        <div class="bg-white p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl scale-95 opacity-0 transition-all duration-300" id="modalContent">
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-[#075E3D]">
+                    <i data-lucide="edit-3"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900">Edit Profil User</h3>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Nama Baru</label>
+                    <input id="editName" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
+                </div>
+            </div>
+
+            <div class="flex gap-3 justify-end mt-8">
+                <button onclick="closeModal()" class="px-6 py-4 text-gray-400 font-bold hover:text-gray-600 transition-colors">Batal</button>
+                <button onclick="saveEdit()" class="px-8 py-4 bg-[#075E3D] text-white rounded-2xl font-bold shadow-lg shadow-green-900/10">Simpan Perubahan</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/auth.js"></script>
+    <script type="module" src="js/users.js"></script>
+    <script>
+        // Lucide manual run untuk ikon statis
+        document.addEventListener("DOMContentLoaded", () => {
+            if (window.lucide) lucide.createIcons();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!-- SIDEBAR CONTENT -->
+<aside class="w-64 bg-white border-r border-gray-200 hidden md:flex flex-col h-full">
+    <div class="p-6 flex items-center gap-3 text-[#075E3D]">
+        <div class="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center">
+            <img src="assets/logo.png" alt="Logo" class="w-full h-full object-contain">
+        </div>
+        <span class="text-xl font-bold tracking-tight">Admin CS</span>
+    </div>
+
+    <nav class="flex-1 px-4 space-y-1 mt-4">
+        <a href="dashboard.html" id="menu-dashboard" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-gray-400 hover:bg-green-50">
+            <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+            <span class="font-medium">Dashboard</span>
+        </a>
+        <a href="users.html" id="menu-users" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-green-50 transition-all font-display">
+            <i data-lucide="users" class="w-5 h-5"></i>
+            <span class="font-medium">Lihat User</span>
+        </a>
+        <a href="jobs.html" id="menu-jobs" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-green-50 transition-all">
+            <i data-lucide="plus-circle" class="w-5 h-5"></i>
+            <span class="font-medium">Tambah Pekerjaan</span>
+        </a>
+        <a href="monitoring.html" id="menu-monitoring" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-green-50 transition-all">
+            <i data-lucide="monitor" class="w-5 h-5"></i>
+            <span class="font-medium">Monitoring Kerja</span>
+        </a>
+        <a href="reports.html" id="menu-reports" class="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-green-50 transition-all">
+            <i data-lucide="file-text" class="w-5 h-5"></i>
+            <span class="font-medium">Rekap Laporan</span>
+        </a>
+    </nav>
+
+    <div class="p-4 border-t border-gray-100">
+        <button onclick="logout()" class="flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 w-full transition-all text-left">
+            <i data-lucide="log-out" class="w-5 h-5"></i>
+            <span class="font-medium">Logout Admin</span>
+        </button>
+    </div>
+</aside>

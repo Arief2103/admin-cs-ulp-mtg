@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CleanAdmin - Rekap Laporan</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- LIBRARY UNTUK MEMBUAT ZIP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .sidebar-active { background-color: #075E3D; color: white; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* PRINT STYLES */
+        @media print {
+            #sidebar, #navbar, .no-print, button, select { display: none !important; }
+            main { margin: 0 !important; padding: 0 !important; background: white !important; height: auto !important; overflow: visible !important; }
+            body { background: white !important; height: auto !important; overflow: visible !important; }
+            .print-only { display: block !important; }
+            .shadow-sm, .shadow-md { box-shadow: none !important; border: 1px solid #eee !important; }
+            .report-card { break-inside: avoid; margin-bottom: 20px; page-break-inside: avoid; }
+            tr { break-inside: avoid; page-break-inside: avoid; }
+        }
+        .print-only { display: none; }
+    </style>
+</head>
+<body class="flex h-screen bg-gray-50 overflow-hidden">
+
+    <!-- SIDEBAR CONTAINER -->
+    <div id="sidebar" class="h-screen sticky top-0 overflow-hidden"></div>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        
+        <!-- NAVBAR CONTAINER -->
+        <div id="navbar"></div>
+
+        <div class="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar relative">
+            
+            <!-- HEADER REKAP -->
+            <div class="flex flex-col xl:flex-row xl:items-end justify-between gap-6 mb-10 no-print">
+                <div>
+                    <h1 class="text-3xl font-black text-gray-900 tracking-tight">Rekap Laporan</h1>
+                    <p class="text-gray-400 font-medium text-sm">Download rekap pekerjaan dalam format ZIP, PDF, atau Word.</p>
+                </div>
+                
+                <div class="flex flex-wrap items-center gap-3">
+                    <!-- FILTER USER -->
+                    <select id="report-user" class="h-12 px-6 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-500 focus:outline-none shadow-sm min-w-[150px]">
+                        <option value="all">Semua Petugas</option>
+                    </select>
+
+                    <!-- FILTER KATEGORI -->
+                    <select id="report-category" class="h-12 px-6 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-500 focus:outline-none shadow-sm min-w-[150px]">
+                        <option value="all">Semua Kategori</option>
+                        <option value="Harian Pagi">Harian Pagi</option>
+                        <option value="Harian Siang">Harian Siang</option>
+                        <option value="Harian Sore">Harian Sore</option>
+                        <option value="Mingguan">Mingguan</option>
+                        <option value="Bulanan">Bulanan</option>
+                        <option value="Weekend">Weekend</option>
+                    </select>
+
+                    <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-2xl border border-gray-100 shadow-sm">
+                        <span class="text-[10px] font-bold text-gray-400 uppercase">Dari:</span>
+                        <input type="date" id="report-start-date" class="text-xs font-bold text-gray-600 outline-none">
+                        <span class="text-[10px] font-bold text-gray-400 uppercase">Ke:</span>
+                        <input type="date" id="report-end-date" class="text-xs font-bold text-gray-600 outline-none">
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button onclick="loadReportData()" class="h-12 px-6 bg-gray-900 text-white rounded-2xl text-xs font-bold hover:bg-black transition-all flex items-center gap-2 shadow-lg shadow-gray-900/10">
+                            <i data-lucide="search" class="w-4 h-4"></i> Filter
+                        </button>
+
+                        <button id="btn-zip" onclick="downloadAllPhotosZip()" class="h-12 px-6 bg-orange-500 text-white rounded-2xl text-xs font-bold hover:bg-orange-600 transition-all flex items-center gap-2 shadow-lg shadow-orange-900/20" title="Download Semua Foto (ZIP)">
+                            <i data-lucide="folder-archive" class="w-4 h-4"></i> ZIP
+                        </button>
+
+                        <button onclick="exportToWord()" class="h-12 px-6 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-900/20">
+                            <i data-lucide="file-text" class="w-4 h-4"></i> Word
+                        </button>
+
+                        <button id="btn-pdf" onclick="exportToPDF()" class="h-12 px-6 bg-[#075E3D] text-white rounded-2xl text-xs font-bold hover:bg-[#064e32] transition-all flex items-center gap-2 shadow-lg shadow-green-900/20">
+                            <i data-lucide="printer" class="w-4 h-4"></i> PDF
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PRINT HEADER -->
+            <div class="print-only mb-10 text-center border-b-2 border-double border-gray-900 pb-6">
+                <h2 class="text-2xl font-black uppercase mb-1">LAPORAN MONITORING CLEANING SERVICE</h2>
+                <h3 class="text-xl font-bold text-gray-600 mb-2 font-mono">CS PLN ULP MANTINGAN</h3>
+                <p id="print-period" class="text-sm font-bold text-gray-400 font-mono tracking-widest uppercase"></p>
+            </div>
+
+            <!-- TABLE REKAP -->
+            <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden mb-8 no-print">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tgl</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Petugas</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Kategori</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tugas</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">Foto</th>
+                        </tr>
+                    </thead>
+                    <tbody id="report-table-body" class="divide-y divide-gray-50">
+                        <!-- Content via JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- DETAIL FOTO (PRINT) -->
+            <div id="print-evidence-list" class="print-only space-y-6">
+                <!-- Foto bukti -->
+            </div>
+
+            <!-- EMPTY STATE -->
+            <div id="report-empty" class="hidden flex flex-col items-center justify-center py-20 text-center">
+                <div class="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-gray-300 mb-4">
+                    <i data-lucide="file-x" class="w-10 h-10"></i>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900">Tidak Ada Data</h3>
+                <p class="text-gray-400 max-w-xs mx-auto">Silakan pilih periode atau petugas yang berbeda.</p>
+            </div>
+        </div>
+    </main>
+
+    <script type="module" src="js/auth.js"></script>
+    <script type="module" src="js/reports.js"></script>
+</body>
+</html>

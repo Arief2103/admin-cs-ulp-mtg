@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CleanAdmin - Monitoring Pekerjaan</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .sidebar-active { background-color: #075E3D; color: white; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden bg-gray-50">
+
+    <!-- SIDEBAR CONTAINER -->
+    <div id="sidebar"></div>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        
+        <!-- NAVBAR CONTAINER -->
+        <div id="navbar"></div>
+
+        <div class="flex-1 overflow-y-auto p-8">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10">
+                <div>
+                    <h1 class="text-3xl font-black text-gray-900 tracking-tight">Monitoring Pekerjaan</h1>
+                    <p class="text-gray-400 font-medium">Pantau progress kerja berdasarkan kategori dan petugas.</p>
+                </div>
+                
+                <div class="flex flex-wrap gap-3">
+                    <!-- FILTER USER -->
+                    <select id="filter-user" onchange="loadMonitoringData()" class="h-12 px-6 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-500 focus:outline-none shadow-sm min-w-[200px]">
+                        <option value="all">Semua Petugas</option>
+                        <!-- Akan diisi otomatis -->
+                    </select>
+
+                    <!-- FILTER KATEGORI -->
+                    <select id="filter-category" onchange="loadMonitoringData()" class="h-12 px-6 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-500 focus:outline-none shadow-sm min-w-[180px]">
+                        <option value="all">Semua Kategori</option>
+                        <option value="Harian Pagi">Harian Pagi</option>
+                        <option value="Harian Siang">Harian Siang</option>
+                        <option value="Harian Sore">Harian Sore</option>
+                        <option value="Mingguan">Mingguan</option>
+                        <option value="Bulanan">Bulanan</option>
+                        <option value="Weekend">Weekend</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- CONTAINER CATEGORY GROUPS -->
+            <div id="monitoring-container" class="space-y-12">
+                <!-- Group-group kategori akan dibuat dinamis di sini -->
+            </div>
+
+            <!-- EMPTY STATE -->
+            <div id="monitoring-empty" class="hidden flex flex-col items-center justify-center py-20 text-center">
+                <div class="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-gray-300 mb-4">
+                    <i data-lucide="clipboard-list" class="w-10 h-10"></i>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900">Belum Ada Tugas</h3>
+                <p class="text-gray-400 max-w-xs mx-auto">Tugas yang Anda kirim ke cleaner akan muncul di sini untuk dipantau.</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- LIGHTBOX / MODAL FOTO (Optional for later) -->
+    <div id="photo-modal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4" onclick="this.classList.add('hidden')">
+        <img id="modal-img" src="" class="max-w-full max-h-full rounded-2xl shadow-2xl">
+    </div>
+
+    <script type="module" src="js/auth.js"></script>
+    <script type="module" src="js/monitoring.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            if (window.lucide) {
+                setTimeout(() => lucide.createIcons(), 100);
+            }
+        });
+    </script>
+</body>
+</html>
