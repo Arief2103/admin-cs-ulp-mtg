@@ -2,27 +2,86 @@ import { db } from './firebase-config.js';
 import { collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { loadComponents } from './components.js';
 
+// FUNGSI UNTUK MENGHITUNG TANGGAL MULAI BERDASARKAN KATEGORI
+function getStartDateForCategory(category) {
+  const now = new Date();
+  const dFormat = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  
+  const cat = (category || "").toLowerCase();
+  
+  if (cat.includes("pagi") || cat.includes("siang") || cat.includes("sore") || cat === "harian" || cat.includes("harian")) {
+    return dFormat(now);
+  } else if (cat.includes("mingguan")) {
+    const monday = new Date(now);
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    monday.setDate(diff);
+    return dFormat(monday);
+  } else if (cat.includes("bulanan")) {
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  } else if (cat.includes("weekend")) {
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const dayOfYear = Math.floor((now - startOfYear) / (1000 * 60 * 60 * 24)) + 1;
+    const weekday = now.getDay() === 0 ? 7 : now.getDay();
+    const weekNum = Math.floor((dayOfYear - weekday + 10) / 7);
+    const biWeekGroup = Math.floor(weekNum / 2);
+    const startDate = new Date(now.getFullYear(), 0, 1 + (biWeekGroup * 14));
+    return dFormat(startDate);
+  }
+  return dFormat(now);
+}
+
+function normalizeDate(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return dateStr;
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split('/');
+    if (parts[0].length === 4) return dateStr.replace(/\//g, '-');
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  if (dateStr.includes('-')) {
+    const parts = dateStr.split('-');
+    if (parts[0].length === 4) return dateStr;
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return dateStr;
+}
+
+// DEFINISI KATEGORI UNTUK UI
+const MONITOR_CATEGORIES = [
+  { id: "pagi", label: "Pagi", match: "Harian Pagi", color: "#065F46" },
+  { id: "siang", label: "Siang", match: "Harian Siang", color: "#059669" },
+  { id: "sore", label: "Sore", match: "Harian Sore", color: "#10B981" },
+  { id: "mingguan", label: "Minggu", match: "Mingguan", color: "#D97706" },
+  { id: "bulanan", label: "Bulan", match: "Bulanan", color: "#2563EB" },
+  { id: "weekend", label: "Weekend", match: "Weekend", color: "#7C3AED" }
+];
+
 // LOAD DATA STATISTIK DARI FIREBASE
 async function loadStats() {
   try {
-    const today = new Date().toLocaleDateString('en-CA');
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
     const jobSnapshot = await getDocs(collection(db, "jobdesk"));
     const userSnapshot = await getDocs(collection(db, "users"));
-    const reportsRef = collection(db, "reports");
-    const qReports = query(reportsRef, where("assignedDate", "==", today));
-    const reportSnapshot = await getDocs(qReports);
+    const reportSnapshot = await getDocs(collection(db, "reports"));
     
-    // Hitung total job yang masuk kategori "Harian" (Pagi, Siang, Sore)
-    const dailyJobs = jobSnapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(job => {
+    const reports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const jobs = jobSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    const dailyJobs = jobs.filter(job => {
       const cat = (job.category || "").toLowerCase();
-      return cat.includes("pagi") || cat.includes("siang") || cat.includes("sore") || cat === "harian";
+      return cat.includes("pagi") || cat.includes("siang") || cat.includes("sore") || cat === "harian" || cat.includes("harian");
     });
 
-    const dailyJobIds = new Set(dailyJobs.map(j => j.id));
-    
-    // Hitung laporan hari ini yang HANYA untuk kategori daily
-    const completedTodayCount = reportSnapshot.docs.filter(doc => {
-      return dailyJobIds.has(doc.data().jobId);
+    const completedTodayCount = reports.filter(doc => {
+      const isDaily = dailyJobs.some(j => j.id === doc.jobId);
+      return isDaily && normalizeDate(doc.assignedDate) === today;
     }).length;
 
     const totalMasterJobs = jobSnapshot.size;
@@ -34,62 +93,25 @@ async function loadStats() {
     const incompleteTodayCount = Math.max(0, dailyJobs.length - completedTodayCount);
 
     // Update UI Cards
-    document.getElementById("stat-total-jobs").textContent = totalMasterJobs;
-    document.getElementById("stat-total-users").textContent = totalCleaners;
-    document.getElementById("stat-complete").textContent = completedTodayCount;
-    document.getElementById("stat-incomplete").textContent = incompleteTodayCount;
+    const elJobs = document.getElementById("stat-total-jobs");
+    const elUsers = document.getElementById("stat-total-users");
+    const elComplete = document.getElementById("stat-complete");
+    const elIncomplete = document.getElementById("stat-incomplete");
+
+    if (elJobs) elJobs.textContent = totalMasterJobs;
+    if (elUsers) elUsers.textContent = totalCleaners;
+    if (elComplete) elComplete.textContent = completedTodayCount;
+    if (elIncomplete) elIncomplete.textContent = incompleteTodayCount;
 
   } catch (e) {
     console.warn("Gagal load stats:", e);
   }
 }
 
-// FUNGSI UNTUK MENGHITUNG TANGGAL MULAI BERDASARKAN KATEGORI
-function getStartDateForCategory(category) {
-  const now = new Date();
-  const dFormat = (d) => d.toLocaleDateString('en-CA');
-  
-  const cat = category.toLowerCase();
-  
-  if (cat.includes("pagi") || cat.includes("siang") || cat.includes("sore") || cat === "harian") {
-    // Reset harian
-    return dFormat(now);
-  } else if (cat.includes("mingguan")) {
-    // Reset mingguan (Senin)
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
-    monday.setHours(0,0,0,0);
-    return dFormat(monday);
-  } else if (cat.includes("bulanan")) {
-    // Reset bulanan (Tgl 1)
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-  } else if (cat.includes("weekend")) {
-    // Reset per 2 minggu (Gunakan Senin minggu genap sebagai referensi)
-    // Jan 1 2024 adalah Senin (Minggu 1)
-    const refDate = new Date(2024, 0, 1);
-    const msDiff = now.getTime() - refDate.getTime();
-    const daysDiff = Math.floor(msDiff / (1000 * 60 * 60 * 24));
-    const fortnights = Math.floor(daysDiff / 14);
-    const startDate = new Date(refDate);
-    startDate.setDate(refDate.getDate() + (fortnights * 14));
-    return dFormat(startDate);
-  }
-  return dFormat(now);
-}
-
-// DEFINISI KATEGORI UNTUK UI
-const MONITOR_CATEGORIES = [
-  { id: "pagi", label: "Pagi", match: "Harian Pagi", color: "#075E3D" },
-  { id: "siang", label: "Siang", match: "Harian Siang", color: "#075E3D" },
-  { id: "sore", label: "Sore", match: "Harian Sore", color: "#075E3D" },
-  { id: "mingguan", label: "Minggu", match: "Mingguan", color: "#F59E0B" },
-  { id: "bulanan", label: "Bulan", match: "Bulanan", color: "#3B82F6" },
-  { id: "weekend", label: "Weekend", match: "Weekend", color: "#8B5CF6" }
-];
-
 // LOAD MONITORING PER PETUGAS
 async function loadMonitoring() {
   const grid = document.getElementById("monitoring-grid");
+  const overviewGrid = document.getElementById("global-overview-grid");
   if (!grid) return;
 
   try {
@@ -105,6 +127,43 @@ async function loadMonitoring() {
       const data = d.data();
       return data.role !== 'admin' && !(data.email && data.email.includes('admin@'));
     });
+
+    // 1. GLOBAL OVERVIEW
+    if (overviewGrid) {
+      overviewGrid.innerHTML = "";
+      const globalChartConfigs = [];
+      MONITOR_CATEGORIES.forEach(cat => {
+        const catJobs = jobs.filter(j => (j.category || "").toLowerCase().includes(cat.id.toLowerCase()));
+        const total = catJobs.length;
+        let done = 0;
+        catJobs.forEach(job => {
+          const threshold = getStartDateForCategory(job.category);
+          if (reports.some(r => r.jobId === job.id && normalizeDate(r.assignedDate) >= threshold)) {
+            done++;
+          }
+        });
+        const percent = total > 0 ? Math.round((done/total)*100) : 0;
+        const chartId = `global-chart-${cat.id}`;
+        overviewGrid.innerHTML += `
+          <div class="flex flex-col items-center p-4 bg-white border border-gray-100 rounded-3xl shadow-sm">
+            <div class="relative w-16 h-16 md:w-20 md:h-20 mb-3">
+              <canvas id="${chartId}"></canvas>
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span class="text-[12px] font-black text-gray-900">${percent}%</span>
+              </div>
+            </div>
+            <div class="text-center">
+              <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">${cat.label}</p>
+              <p class="text-[10px] font-bold text-gray-900">${done}/${total}</p>
+            </div>
+          </div>
+        `;
+        globalChartConfigs.push({ id: chartId, done, total, color: cat.color });
+      });
+      setTimeout(() => {
+        globalChartConfigs.forEach(conf => renderDoughnut(conf));
+      }, 0);
+    }
 
     grid.innerHTML = "";
 
@@ -122,13 +181,13 @@ async function loadMonitoring() {
       const chartConfigs = [];
 
       MONITOR_CATEGORIES.forEach(cat => {
-        const catJobs = personJobs.filter(j => j.category === cat.match);
+        const catJobs = personJobs.filter(j => (j.category || "").toLowerCase().includes(cat.id.toLowerCase()));
         const total = catJobs.length;
         let done = 0;
 
         catJobs.forEach(job => {
           const threshold = getStartDateForCategory(job.category);
-          if (reports.some(r => r.jobId === job.id && r.assignedDate >= threshold)) {
+          if (reports.some(r => r.jobId === job.id && normalizeDate(r.assignedDate) >= threshold)) {
             done++;
           }
         });
@@ -184,26 +243,7 @@ async function loadMonitoring() {
       setTimeout(() => {
         if (window.lucide) lucide.createIcons();
         chartConfigs.forEach(conf => {
-          const el = document.getElementById(conf.id);
-          if (!el) return;
-          const ctx = el.getContext('2d');
-          new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-              datasets: [{
-                data: [conf.done, conf.total === 0 ? 1 : Math.max(0, conf.total - conf.done)],
-                backgroundColor: [conf.color, '#E2E8F0'],
-                borderWidth: 0,
-                cutout: '80%'
-              }]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: true,
-              plugins: { legend: { display: false }, tooltip: { enabled: false } },
-              animation: { duration: 1000 }
-            }
-          });
+          renderDoughnut(conf);
         });
       }, 0);
     });
@@ -220,7 +260,48 @@ async function loadMonitoring() {
 
 // JALANKAN SAAT LOAD
 document.addEventListener("DOMContentLoaded", async () => {
-  await loadComponents();
-  loadStats();
-  loadMonitoring();
+  try {
+    await loadComponents();
+    const dateEl = document.getElementById('current-date');
+    if (dateEl) {
+      const now = new Date();
+      dateEl.textContent = now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    }
+    loadStats();
+    loadMonitoring();
+  } catch (e) {
+    console.error("Initialization error:", e);
+  }
 });
+
+// FUNGSI RENDER CHART DOUGHNUT
+function renderDoughnut(conf) {
+  const canvas = document.getElementById(conf.id);
+  if (!canvas) return;
+  
+  // Hancurkan chart lama jika ada
+  const existingChart = Chart.getChart(canvas);
+  if (existingChart) existingChart.destroy();
+
+  new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      datasets: [{
+        data: [conf.done, Math.max(0, conf.total - conf.done)],
+        backgroundColor: [conf.color, '#f1f5f9'],
+        borderWidth: 0,
+        hoverOffset: 0
+      }]
+    },
+    options: {
+      cutout: '75%',
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 1000 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false }
+      }
+    }
+  });
+}
