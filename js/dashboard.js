@@ -25,13 +25,25 @@ function getStartDateForCategory(category) {
   } else if (cat.includes("bulanan")) {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
   } else if (cat.includes("weekend")) {
+    // Sync dengan logika Mobile (bi-weekly Monday)
+    // Tentukan Senin dari minggu ini
+    const monday = new Date(now);
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    monday.setDate(diff);
+
+    // Hitung weekNum sesuai rumus Flutter
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const dayOfYear = Math.floor((now - startOfYear) / (1000 * 60 * 60 * 24)) + 1;
     const weekday = now.getDay() === 0 ? 7 : now.getDay();
     const weekNum = Math.floor((dayOfYear - weekday + 10) / 7);
-    const biWeekGroup = Math.floor(weekNum / 2);
-    const startDate = new Date(now.getFullYear(), 0, 1 + (biWeekGroup * 14));
-    return dFormat(startDate);
+
+    // Jika minggu ganjil (1, 3, 5...), mundur 7 hari ke Senin minggu sebelumnya (genap: 0, 2, 4...)
+    // agar membentuk blok periode 2 mingguan.
+    if (weekNum % 2 !== 0) {
+      monday.setDate(monday.getDate() - 7);
+    }
+    return dFormat(monday);
   }
   return dFormat(now);
 }
@@ -133,7 +145,11 @@ async function loadMonitoring() {
       overviewGrid.innerHTML = "";
       const globalChartConfigs = [];
       MONITOR_CATEGORIES.forEach(cat => {
-        const catJobs = jobs.filter(j => (j.category || "").toLowerCase().includes(cat.id.toLowerCase()));
+        const catJobs = jobs.filter(j => {
+          const jcat = (j.category || "").toLowerCase();
+          return jcat.includes(cat.id.toLowerCase()) || 
+                 (cat.match && jcat.includes(cat.match.toLowerCase()));
+        });
         const total = catJobs.length;
         let done = 0;
         catJobs.forEach(job => {
@@ -181,7 +197,11 @@ async function loadMonitoring() {
       const chartConfigs = [];
 
       MONITOR_CATEGORIES.forEach(cat => {
-        const catJobs = personJobs.filter(j => (j.category || "").toLowerCase().includes(cat.id.toLowerCase()));
+        const catJobs = personJobs.filter(j => {
+          const jcat = (j.category || "").toLowerCase();
+          return jcat.includes(cat.id.toLowerCase()) || 
+                 (cat.match && jcat.includes(cat.match.toLowerCase()));
+        });
         const total = catJobs.length;
         let done = 0;
 
