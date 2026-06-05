@@ -6,20 +6,34 @@ import {
     addDoc, 
     query, 
     orderBy, 
-    limit, 
     serverTimestamp,
     deleteDoc,
-    doc
+    doc,
+    updateDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+// Store preloaded jobs for fast edit access
+let allRecentJobs = [];
+
+function cleanName(name) {
+    if (!name) return "";
+    let cleaned = name.trim();
+    cleaned = cleaned.replace(/^(PK|MR|MS|CS|Admin)\s+/i, "");
+    return cleaned;
+}
 
 // Load Data Petugas ke Select
 async function populateCleaners() {
     const select = document.getElementById('select-cleaner');
+    const editSelect = document.getElementById('edit-select-cleaner');
     if (!select) return;
 
     try {
         const snapshot = await getDocs(collection(db, "users"));
         select.innerHTML = '<option value="">-- Pilih Petugas Cleaning Service --</option>';
+        if (editSelect) {
+            editSelect.innerHTML = '<option value="">-- Pilih Petugas Cleaning Service --</option>';
+        }
         
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
@@ -27,11 +41,21 @@ async function populateCleaners() {
             const isAdmin = data.role === 'admin' || (data.email && data.email.includes('admin@'));
             
             if (!isAdmin) {
+                // Populate main select
                 const option = document.createElement('option');
                 option.value = docSnap.id;
-                option.dataset.name = data.name;
-                option.textContent = data.name;
+                option.dataset.name = cleanName(data.name);
+                option.textContent = cleanName(data.name);
                 select.appendChild(option);
+
+                // Populate edit select
+                if (editSelect) {
+                    const editOption = document.createElement('option');
+                    editOption.value = docSnap.id;
+                    editOption.dataset.name = cleanName(data.name);
+                    editOption.textContent = cleanName(data.name);
+                    editSelect.appendChild(editOption);
+                }
             }
         });
     } catch (error) {
@@ -108,22 +132,22 @@ window.loadRecentJobs = async function() {
     container.innerHTML = `<div class="flex justify-center p-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#075E3D]"></div></div>`;
 
     try {
-        // Ambil data terbaru (Query sederhana agar tidak butuh index rumit)
-        const q = query(collection(db, "jobdesk"), orderBy("createdAt", "desc"), limit(50));
+        // Ambil semua data agar tidak terpotong saat difilter per petugas di sisi Client
+        const q = query(collection(db, "jobdesk"), orderBy("createdAt", "desc"));
         const snapshot = await getDocs(q);
         
         container.innerHTML = "";
         
-        let allDocs = [];
+        allRecentJobs = [];
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
             // Filter di sisi Client agar aman dari error index Firestore
             if (userFilter === "all" || data.cleanerId === userFilter) {
-                allDocs.push({ id: docSnap.id, ...data });
+                allRecentJobs.push({ id: docSnap.id, ...data });
             }
         });
 
-        if (allDocs.length === 0) {
+        if (allRecentJobs.length === 0 && userFilter === "all") {
             container.innerHTML = `
                 <div class="bg-white p-20 rounded-[2.5rem] border border-gray-100 text-center shadow-sm">
                     <p class="text-gray-400 italic">Tidak ada histori tugas ditemukan untuk pilihan ini.</p>
@@ -133,10 +157,10 @@ window.loadRecentJobs = async function() {
 
         if (userFilter === "all") {
             // TAMPILAN TABEL BIASA (SEMUA PETUGAS)
-            renderSimpleTable(allDocs, container);
+            renderSimpleTable(allRecentJobs, container);
         } else {
             // TAMPILAN GRUP PER KATEGORI (UNTUK 1 PETUGAS)
-            renderGroupedByOwner(allDocs, container);
+            renderGroupedByOwner(allRecentJobs, container);
         }
 
         if (window.lucide) lucide.createIcons();
@@ -152,28 +176,39 @@ function renderSimpleTable(docs, container) {
     docs.forEach(data => {
         rows += `
             <tr class="hover:bg-gray-50 transition-colors">
-                <td class="px-8 py-4 text-sm font-bold text-gray-900">${data.cleanerName}</td>
+                <td class="px-8 py-4 text-sm font-bold text-gray-900">${cleanName(data.cleanerName)}</td>
                 <td class="px-8 py-4"><span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full uppercase">${data.category}</span></td>
                 <td class="px-8 py-4 text-xs text-gray-500 truncate max-w-xs">${data.description}</td>
-                <td class="px-8 py-4"><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full ${data.status ? 'bg-green-500' : 'bg-orange-400'}"></div><span class="text-[10px] font-bold text-gray-400">${data.status ? 'Selesai' : 'Pending'}</span></div></td>
-                <td class="px-8 py-4 text-center"><button onclick="deleteJob('${data.id}')" class="p-2 text-gray-300 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>
+                <td class="px-8 py-4"><div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full ${data.status ? 'bg-green-500' : 'bg-green-400'}"></div><span class="text-[10px] font-bold text-gray-400">${data.status ? 'Selesai' : 'Aktif'}</span></div></td>
+                <td class="px-8 py-4 text-center">
+                    <div class="flex items-center justify-center gap-1">
+                        <button onclick="editJob('${data.id}')" class="p-2 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-all" title="Edit Tugas">
+                            <i data-lucide="edit-3" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="deleteJob('${data.id}')" class="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-all" title="Hapus Tugas">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </td>
             </tr>`;
     });
 
     container.innerHTML = `
         <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-            <table class="w-full text-left">
-                <thead class="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                        <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Petugas</th>
-                        <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Kategori</th>
-                        <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tugas</th>
-                        <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
-                        <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-50">${rows}</tbody>
-            </table>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left min-w-[750px]">
+                    <thead class="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Petugas</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Kategori</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tugas</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
+                            <th class="px-8 py-5 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">${rows}</tbody>
+                </table>
+            </div>
         </div>`;
 }
 
@@ -189,33 +224,46 @@ function renderGroupedByOwner(docs, container) {
 
     categories.forEach(cat => {
         const jobs = groups[cat];
+        const groupDiv = document.createElement('div');
+        groupDiv.className = "bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm mb-6";
+        
+        let items = "";
         if (jobs.length > 0) {
-            const groupDiv = document.createElement('div');
-            groupDiv.className = "bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm mb-6";
-            
-            let items = jobs.map(j => `
+            items = jobs.map(j => `
                 <div class="flex items-start justify-between py-4 ${jobs.indexOf(j) !== jobs.length-1 ? 'border-b border-gray-50' : ''}">
                     <div class="flex-1 pr-4">
-                        <p class="text-xs text-gray-600 leading-relaxed">${j.description}</p>
+                        <p class="text-xs text-gray-650 leading-relaxed">${j.description}</p>
                         <div class="flex items-center gap-2 mt-2">
                             <span class="text-[9px] font-bold ${j.status ? 'text-green-500' : 'text-orange-400'} uppercase tracking-tight">
                                 ${j.status ? 'Selesai' : 'Sedang Berjalan'}
                             </span>
                         </div>
                     </div>
-                    <button onclick="deleteJob('${j.id}')" class="p-2 text-gray-300 hover:text-red-500 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    <div class="flex items-center gap-1">
+                        <button onclick="editJob('${j.id}')" class="p-1 px-2 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-colors" title="Edit Tugas">
+                            <i data-lucide="edit-3" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="deleteJob('${j.id}')" class="p-1 px-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Tugas">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
                 </div>
             `).join('');
-
-            groupDiv.innerHTML = `
-                <div class="flex items-center justify-between mb-4 border-b border-gray-100 pb-3">
-                    <h4 class="text-[10px] font-black text-[#075E3D] uppercase tracking-[0.2em]">${cat}</h4>
-                    <span class="text-[9px] font-bold text-gray-300 px-2 py-0.5 border border-gray-100 rounded-lg">${jobs.length} Tugas</span>
-                </div>
-                <div class="divide-y divide-gray-50">${items}</div>
-            `;
-            container.appendChild(groupDiv);
+        } else {
+            items = `
+                <div class="py-6 text-center">
+                    <p class="text-xs text-gray-400 italic">Belum ada tugas di kategori ini.</p>
+                </div>`;
         }
+
+        groupDiv.innerHTML = `
+            <div class="flex items-center justify-between mb-4 border-b border-gray-100 pb-3">
+                <h4 class="text-[10px] font-black text-[#075E3D] uppercase tracking-[0.2em]">${cat}</h4>
+                <span class="text-[9px] font-bold text-gray-300 px-2 py-0.5 border border-gray-100 rounded-lg">${jobs.length} Tugas</span>
+            </div>
+            <div class="divide-y divide-gray-50">${items}</div>
+        `;
+        container.appendChild(groupDiv);
     });
 }
 
@@ -234,6 +282,72 @@ window.deleteJob = async function(id) {
 window.resetForm = function() {
     document.getElementById('select-cleaner').value = "";
     document.getElementById('task-description').value = "";
+}
+
+// Open Edit Modal
+window.editJob = async function(id) {
+    const editModal = document.getElementById('edit-job-modal');
+    if (!editModal) return;
+
+    try {
+        // Find the job in our preloaded array for instant response
+        const job = allRecentJobs.find(j => j.id === id);
+        if (!job) {
+            alert("Data tugas tidak ditemukan!");
+            return;
+        }
+
+        // Set inputs
+        document.getElementById('edit-job-id').value = id;
+        document.getElementById('edit-select-cleaner').value = job.cleanerId;
+        document.getElementById('edit-select-category').value = job.category;
+        document.getElementById('edit-task-description').value = job.description;
+
+        // Open modal
+        editModal.classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    } catch (error) {
+        console.error("Gagal membuka edit modal:", error);
+    }
+}
+
+// Close Edit Modal
+window.closeEditModal = function() {
+    const editModal = document.getElementById('edit-job-modal');
+    if (editModal) editModal.classList.add('hidden');
+}
+
+// Update Job
+window.updateJob = async function() {
+    const jobId = document.getElementById('edit-job-id').value;
+    const cleanerSelect = document.getElementById('edit-select-cleaner');
+    const category = document.getElementById('edit-select-category').value;
+    const description = document.getElementById('edit-task-description').value;
+
+    if (!jobId || !cleanerSelect.value || !category || !description) {
+        alert("Harap lengkapi semua data pekerjaan!");
+        return;
+    }
+
+    const cleanerId = cleanerSelect.value;
+    const cleanerName = cleanerSelect.options[cleanerSelect.selectedIndex].dataset.name;
+
+    try {
+        const jobRef = doc(db, "jobdesk", jobId);
+        await updateDoc(jobRef, {
+            cleanerId: cleanerId,
+            cleanerName: cleanerName,
+            category: category,
+            description: description
+        });
+
+        alert("Tugas berhasil diperbarui!");
+        closeEditModal();
+        loadRecentJobs();
+    } catch (error) {
+        console.error("Gagal memperbarui tugas:", error);
+        alert("Gagal memperbarui tugas: " + error.message);
+    }
 }
 
 // Inisialisasi

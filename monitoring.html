@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitoring - CS ULP Mantingan</title>
+    <title>Monitoring Kerja - CS ULP Mantingan</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -24,51 +24,78 @@
         <div id="navbar"></div>
 
         <div class="flex-1 overflow-y-auto p-8">
-            <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10">
+            <div class="flex flex-col xl:flex-row xl:items-end justify-between gap-6 mb-8">
                 <div>
                     <h1 class="text-3xl font-black text-gray-900 tracking-tight">Monitoring Pekerjaan</h1>
-                    <p class="text-gray-400 font-medium">Pantau progress kerja berdasarkan kategori dan petugas.</p>
+                    <p class="text-gray-400 font-medium"></p>
                 </div>
-                
-                <div class="flex flex-wrap gap-3">
-                    <!-- FILTER USER -->
-                    <select id="filter-user" onchange="loadMonitoringData()" class="h-12 px-6 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-500 focus:outline-none shadow-sm min-w-[200px]">
-                        <option value="all">Semua Petugas</option>
-                        <!-- Akan diisi otomatis -->
-                    </select>
 
-                    <!-- FILTER KATEGORI -->
-                    <select id="filter-category" onchange="loadMonitoringData()" class="h-12 px-6 bg-white border border-gray-100 rounded-2xl text-xs font-bold text-gray-500 focus:outline-none shadow-sm min-w-[180px]">
-                        <option value="all">Semua Kategori</option>
-                        <option value="Harian Pagi">Harian Pagi</option>
-                        <option value="Harian Siang">Harian Siang</option>
-                        <option value="Harian Sore">Harian Sore</option>
-                        <option value="Mingguan">Mingguan</option>
-                        <option value="Bulanan">Bulanan</option>
-                        <option value="Weekend">Weekend</option>
-                    </select>
+                <!-- CONTROLS ROW -->
+                <div class="flex flex-wrap items-center gap-4 bg-white p-4 rounded-3xl border border-gray-100 shadow-xs">
+                    <!-- Status Filter Tabs -->
+                    <div class="bg-gray-50 p-1 rounded-2xl flex gap-1">
+                        <button id="filter-all" onclick="setFilter('all')" class="px-4 py-2 rounded-xl text-xs font-bold transition-all bg-white text-gray-900 shadow-sm">
+                            Semua (<span id="count-all">0</span>)
+                        </button>
+                        <button id="filter-pending" onclick="setFilter('pending')" class="px-4 py-2 rounded-xl text-xs font-bold transition-all text-gray-400 hover:text-gray-600">
+                            Pending (<span id="count-pending">0</span>)
+                        </button>
+                        <button id="filter-completed" onclick="setFilter('completed')" class="px-4 py-2 rounded-xl text-xs font-bold transition-all text-gray-400 hover:text-gray-600">
+                            Selesai (<span id="count-completed">0</span>)
+                        </button>
+                    </div>
+
+                    <!-- Dropdowns -->
+                    <div class="flex items-center gap-2">
+                        <!-- FILTER PETUGAS -->
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-[8px] font-black uppercase text-gray-400 tracking-wider">Saring Petugas</span>
+                            <select id="filter-user" onchange="applyFilters()" class="h-10 px-3 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold text-gray-600 focus:outline-none min-w-[160px]">
+                                <option value="all">Semua Petugas</option>
+                            </select>
+                        </div>
+
+                        <!-- FILTER KATEGORI -->
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-[8px] font-black uppercase text-gray-400 tracking-wider">Kategori Tugas</span>
+                            <select id="filter-category" onchange="applyFilters()" class="h-10 px-3 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold text-gray-600 focus:outline-none min-w-[140px]">
+                                <option value="all">Semua Kategori</option>
+                                <option value="Harian Pagi">Harian Pagi</option>
+                                <option value="Harian Siang">Harian Siang</option>
+                                <option value="Harian Sore">Harian Sore</option>
+                                <option value="Mingguan">Mingguan</option>
+                                <option value="Bulanan">Bulanan</option>
+                                <option value="Weekend">Weekend</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- CONTAINER CATEGORY GROUPS -->
-            <div id="monitoring-container" class="space-y-12">
+            <div id="monitoring-container" class="space-y-8">
                 <!-- Group-group kategori akan dibuat dinamis di sini -->
             </div>
 
             <!-- EMPTY STATE -->
             <div id="monitoring-empty" class="hidden flex flex-col items-center justify-center py-20 text-center">
-                <div class="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-gray-300 mb-4">
-                    <i data-lucide="clipboard-list" class="w-10 h-10"></i>
+                <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center text-gray-300 mb-4 shadow-inner">
+                    <i data-lucide="clipboard-list" class="w-8 h-8"></i>
                 </div>
-                <h3 class="text-lg font-bold text-gray-900">Belum Ada Tugas</h3>
-                <p class="text-gray-400 max-w-xs mx-auto">Tugas yang Anda kirim ke cleaner akan muncul di sini untuk dipantau.</p>
+                <h3 class="text-base font-black text-gray-800 uppercase tracking-wide">Belum Ada Tugas</h3>
+                <p class="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed mt-1">Tugas yang sesuai dengan filter Anda belum tersedia atau belum dibuat oleh admin.</p>
             </div>
         </div>
     </main>
 
-    <!-- LIGHTBOX / MODAL FOTO (Optional for later) -->
-    <div id="photo-modal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4" onclick="this.classList.add('hidden')">
-        <img id="modal-img" src="" class="max-w-full max-h-full rounded-2xl shadow-2xl">
+    <!-- PHOTO PREVIEW LIGHTBOX -->
+    <div id="photo-lightbox" onclick="closeLightbox()" class="hidden fixed inset-0 bg-black/90 backdrop-blur-xs z-50 flex items-center justify-center p-4 cursor-zoom-out">
+        <div class="relative max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl bg-black" onclick="event.stopPropagation()">
+            <img id="lightbox-img" src="" alt="Bukti Kerja" referrerpolicy="no-referrer" class="w-full h-full object-contain" />
+            <button onclick="closeLightbox(); event.stopPropagation()" class="absolute top-4 right-4 bg-white/10 p-2 text-white hover:bg-white/20 rounded-full transition-all">
+                <i data-lucide="x" class="w-6 h-6"></i>
+            </button>
+        </div>
     </div>
 
     <script type="module" src="js/auth.js"></script>

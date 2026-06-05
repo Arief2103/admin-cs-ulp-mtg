@@ -27,7 +27,7 @@
             <div class="flex items-center justify-between mb-8">
                 <div>
                     <h1 class="text-3xl font-black text-gray-900 tracking-tight">Tambah Pekerjaan</h1>
-                    <p class="text-gray-400 font-medium">Delegasikan tugas spesifik ke tim cleaning service.</p>
+                    <p class="text-gray-400 font-medium"></p>
                 </div>
             </div>
 
@@ -95,6 +95,60 @@
             </div>
         </div>
     </main>
+
+    <!-- EDIT TASK MODAL -->
+    <div id="edit-job-modal" class="hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl max-w-lg w-full">
+            <div class="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
+                <h3 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <i data-lucide="edit" class="w-5 h-5 text-green-600"></i>
+                    Edit Tugas
+                </h3>
+                <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <input type="hidden" id="edit-job-id">
+            
+            <div class="space-y-6 mb-8">
+                <!-- PILIH CLEANER -->
+                <div>
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Pilih Petugas (Cleaner)</label>
+                    <select id="edit-select-cleaner" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all appearance-none cursor-pointer">
+                        <!-- Loaded dynamically -->
+                    </select>
+                </div>
+
+                <!-- JENIS LAPORAN -->
+                <div>
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Kategori Pekerjaan</label>
+                    <select id="edit-select-category" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all appearance-none cursor-pointer">
+                        <option value="Harian Pagi">Laporan Harian Pagi (08:00)</option>
+                        <option value="Harian Siang">Laporan Harian Siang (13:00)</option>
+                        <option value="Harian Sore">Laporan Harian Sore (16:00)</option>
+                        <option value="Mingguan">Laporan Mingguan</option>
+                        <option value="Bulanan">Laporan Bulanan</option>
+                        <option value="Weekend">Piket Weekend</option>
+                    </select>
+                </div>
+
+                <!-- DESKRIPSI PEKERJAAN -->
+                <div>
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Deskripsi Tugas & Lokasi</label>
+                    <textarea id="edit-task-description" rows="4" class="w-full p-6 bg-gray-50 border border-transparent rounded-3xl focus:bg-white focus:border-green-500 focus:outline-none transition-all resize-none"></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-4">
+                <button onclick="closeEditModal()" class="px-8 py-4 text-gray-400 font-bold hover:text-gray-600 transition-colors">Batal</button>
+                <button onclick="updateJob()" class="bg-[#075E3D] text-white px-10 py-4 rounded-2xl font-bold shadow-lg shadow-green-900/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
+                    <i data-lucide="check" class="w-5 h-5"></i>
+                    Simpan Perubahan
+                </button>
+            </div>
+        </div>
+    </div>
 
     <script type="module" src="js/auth.js"></script>
     <script type="module" src="js/jobs.js"></script>

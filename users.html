@@ -27,7 +27,7 @@
             <div class="flex items-center justify-between mb-8">
                 <div>
                     <h1 class="text-3xl font-black text-gray-900 tracking-tight">Master User</h1>
-                    <p class="text-gray-400 font-medium">Manajemen cleaner dan tim operasional.</p>
+                    <p class="text-gray-400 font-medium"></p>
                 </div>
             </div>
 
@@ -40,15 +40,31 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Nama Lengkap</label>
-                        <input id="name" placeholder="name" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
+                        <input id="name" placeholder="masukan nama" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Alamat Email</label>
-                        <input id="email" placeholder="name@gmail.com" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
+                        <input id="email" placeholder="nama@gmail.com" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">Password Akses</label>
-                        <input id="password" type="password" placeholder="••••••••" class="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2 mb-2 block">
+                            Password Akses
+                        </label>
+
+                        <div class="relative">
+                            <input
+                                id="password"
+                                type="password"
+                                placeholder="••••••••"
+                                class="w-full h-14 px-6 pr-14 bg-gray-50 border border-transparent rounded-2xl focus:bg-white focus:border-green-500 focus:outline-none transition-all">
+
+                            <button
+                                type="button"
+                                id="togglePassword"
+                                class="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#075E3D] transition-colors">
+                                <i id="eyeIcon" data-lucide="eye" class="w-5 h-5"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="flex justify-end mt-6">
@@ -91,11 +107,41 @@
 
     <script type="module" src="js/auth.js"></script>
     <script type="module" src="js/users.js"></script>
+
     <script>
-        // Lucide manual run untuk ikon statis
-        document.addEventListener("DOMContentLoaded", () => {
-            if (window.lucide) lucide.createIcons();
-        });
+    document.addEventListener("DOMContentLoaded", () => {
+
+        // Render ikon Lucide
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        // Tombol tampil/sembunyikan password
+        const passwordInput = document.getElementById("password");
+        const togglePassword = document.getElementById("togglePassword");
+
+        if (passwordInput && togglePassword) {
+
+            togglePassword.addEventListener("click", () => {
+
+                if (passwordInput.type === "password") {
+                    passwordInput.type = "text";
+
+                    togglePassword.innerHTML =
+                        '<i data-lucide="eye-off" class="w-5 h-5"></i>';
+                } else {
+                    passwordInput.type = "password";
+
+                    togglePassword.innerHTML =
+                        '<i data-lucide="eye" class="w-5 h-5"></i>';
+                }
+
+                lucide.createIcons();
+            });
+
+        }
+
+    });
     </script>
 </body>
 </html>

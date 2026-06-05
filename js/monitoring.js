@@ -5,17 +5,30 @@ import {
     getDocs, 
     query, 
     orderBy, 
+    doc, 
+    updateDoc,
     where 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// Load Data User untuk Filter
+let allJobs = [];
+let currentFilter = 'all'; // status filter: 'all', 'pending', 'completed'
+
+// HELPER UNTUK MENGHAPUS INISIAL PETUGAS (PK, MR, MS dll)
+function cleanName(name) {
+    if (!name) return "";
+    let cleaned = name.trim();
+    // Hapus PK, MR, MS dll di awal string (case insensitive) diikuti spasi
+    cleaned = cleaned.replace(/^(PK|MR|MS|CS|Admin)\s+/i, "");
+    return cleaned;
+}
+
+// 1. POPULATE USERS FOR SELECT FILTER
 async function populateUsers() {
     const select = document.getElementById('filter-user');
     if (!select) return;
 
     try {
         const snapshot = await getDocs(collection(db, "users"));
-        // Sisakan "Semua Petugas"
         select.innerHTML = '<option value="all">Semua Petugas</option>';
         
         snapshot.forEach(docSnap => {
@@ -24,7 +37,7 @@ async function populateUsers() {
             if (!isAdmin) {
                 const option = document.createElement('option');
                 option.value = docSnap.id;
-                option.textContent = data.name;
+                option.textContent = cleanName(data.name);
                 select.appendChild(option);
             }
         });
@@ -33,199 +46,444 @@ async function populateUsers() {
     }
 }
 
-async function loadMonitoringData() {
-    const mainContainer = document.getElementById("monitoring-container");
+// FUNGSI UNTUK MENGHITUNG TANGGAL MULAI BERDASARKAN KATEGORI (Sesuai Dashboard)
+function getStartDateForCategory(category) {
+  const now = new Date();
+  const dFormat = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  
+  const cat = (category || "").toLowerCase();
+  
+  if (cat.includes("pagi") || cat.includes("siang") || cat.includes("sore") || cat === "harian" || cat.includes("harian")) {
+    return dFormat(now);
+  } else if (cat.includes("mingguan")) {
+    const monday = new Date(now);
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    monday.setDate(diff);
+    return dFormat(monday);
+  } else if (cat.includes("bulanan")) {
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  } else if (cat.includes("weekend")) {
+    // Sync dengan logika Mobile (bi-weekly Monday)
+    const monday = new Date(now);
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    monday.setDate(diff);
+
+    // Hitung weekNum sesuai rumus Flutter
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const dayOfYear = Math.floor((now - startOfYear) / (1000 * 60 * 60 * 24)) + 1;
+    const weekday = now.getDay() === 0 ? 7 : now.getDay();
+    const weekNum = Math.floor((dayOfYear - weekday + 10) / 7);
+
+    // Jika minggu ganjil, mundur 7 hari ke Senin minggu sebelumnya
+    if (weekNum % 2 !== 0) {
+      monday.setDate(monday.getDate() - 7);
+    }
+    return dFormat(monday);
+  }
+  return dFormat(now);
+}
+
+function normalizeDate(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return dateStr;
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split('/');
+    if (parts[0].length === 4) return dateStr.replace(/\//g, '-');
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  if (dateStr.includes('-')) {
+    const parts = dateStr.split('-');
+    if (parts[0].length === 4) return dateStr;
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return dateStr;
+}
+
+function formatIndonesianDate(dateStr) {
+    if (!dateStr) return "-";
+    let cleanDate = normalizeDate(dateStr);
+    if (!cleanDate) return "-";
+
+    let dateObj;
+    if (cleanDate.includes('-')) {
+        const parts = cleanDate.split('-');
+        if (parts[0].length === 4) {
+            dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        } else {
+            dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        }
+    } else if (cleanDate.includes('/')) {
+        const parts = cleanDate.split('/');
+        dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    }
+
+    if (!dateObj || isNaN(dateObj.getTime())) {
+        dateObj = new Date(cleanDate);
+    }
+
+    if (isNaN(dateObj.getTime())) {
+        return dateStr;
+    }
+
+    const indonesianMonths = [
+        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    ];
+
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = indonesianMonths[dateObj.getMonth()];
+    const year = dateObj.getFullYear();
+
+    return `${day} ${month} ${year}`;
+}
+
+function getEarliestThresholdDate() {
+    const dates = [
+        getStartDateForCategory("Harian Pagi"),
+        getStartDateForCategory("Mingguan"),
+        getStartDateForCategory("Bulanan"),
+        getStartDateForCategory("Weekend")
+    ];
+    dates.sort();
+    return dates[0];
+}
+
+function getCleanerPriority(name) {
+    if (!name) return 99;
+    const n = name.toLowerCase();
+    if (n.includes("kardi")) return 1;
+    if (n.includes("randy")) return 2;
+    if (n.includes("saiful")) return 3;
+    return 10; // For others
+}
+
+// 2. LOAD DATA FROM FIRESTORE
+window.loadMonitoringJobs = async function() {
+    const container = document.getElementById("monitoring-container");
     const emptyState = document.getElementById("monitoring-empty");
-    const userFilter = document.getElementById("filter-user").value;
-    const categoryFilter = document.getElementById("filter-category").value;
-    
-    if (!mainContainer) return;
+    if (!container) return;
+
+    container.innerHTML = `<div class="flex justify-center p-20"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#075E3D]"></div></div>`;
 
     try {
-        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+        const earliestDate = getEarliestThresholdDate();
         
-        // 1. Ambil Master Tugas
-        let qJobs = query(collection(db, "jobdesk"), orderBy("createdAt", "desc"));
+        // Ambil Master Tugas
+        const qJobs = query(collection(db, "jobdesk"), orderBy("createdAt", "desc"));
         const jobSnapshot = await getDocs(qJobs);
         
-        if (jobSnapshot.empty) {
-            mainContainer.innerHTML = "";
-            emptyState.classList.remove('hidden');
-            return;
-        }
-
-        // 2. Ambil Laporan hari ini saja untuk status monitoring
+        // Ambil Laporan yang dibuat mulai dari batas siklus terlama
         const reportsRef = collection(db, "reports");
-        const qReports = query(reportsRef, where("assignedDate", "==", today));
+        const qReports = query(reportsRef, where("assignedDate", ">=", earliestDate));
         const reportSnapshot = await getDocs(qReports);
         
-        const todayReports = {};
+        const reportsList = [];
         reportSnapshot.forEach(docSnap => {
-            const data = docSnap.data();
-            // Simpan laporan terbaru per jobId jika ada duplikat (asumsi 1 per hari)
-            todayReports[data.jobId] = data;
+            reportsList.push({ id: docSnap.id, ...docSnap.data() });
         });
 
-        // 3. Filter & Gabungkan Data
-        let filteredJobs = [];
+        allJobs = [];
         jobSnapshot.forEach(docSnap => {
             const jobData = docSnap.data();
-            const report = todayReports[docSnap.id];
+            const threshold = getStartDateForCategory(jobData.category);
             
-            const matchUser = (userFilter === "all" || jobData.cleanerId === userFilter);
-            const matchCat = (categoryFilter === "all" || jobData.category === categoryFilter);
+            // Cari report yang sesuai untuk job ini di siklus saat ini
+            const matchingReports = reportsList.filter(r => r.jobId === docSnap.id && normalizeDate(r.assignedDate) >= threshold);
             
-            if (matchUser && matchCat) {
-                // Gunakan data dari report jika ada (untuk foto & status hari ini)
-                filteredJobs.push({
-                    id: docSnap.id,
-                    ...jobData,
-                    status: !!report,
-                    photoUrl: report ? (report.photoUrl || report.imageUrl) : null,
-                    description: report ? report.description : jobData.description,
-                    assignedDate: report ? report.assignedDate : today
-                });
+            // Ambil report paling baru di siklus ini jika ada
+            let latestReport = null;
+            if (matchingReports.length > 0) {
+                matchingReports.sort((a, b) => normalizeDate(b.assignedDate).localeCompare(normalizeDate(a.assignedDate)));
+                latestReport = matchingReports[0];
             }
+            
+            allJobs.push({
+                id: docSnap.id,
+                ...jobData,
+                status: !!latestReport, // Selesai jika sudah diisi di siklus ini
+                photoUrl: latestReport ? (latestReport.photoUrl || latestReport.imageUrl) : null,
+                cleanerName: cleanName(latestReport ? (latestReport.cleanerName || jobData.cleanerName) : jobData.cleanerName),
+                assignedDate: latestReport ? latestReport.assignedDate : null
+            });
         });
 
-        mainContainer.innerHTML = "";
-
-        if (filteredJobs.length === 0) {
-            emptyState.classList.remove('hidden');
-            return;
-        } else {
-            emptyState.classList.add('hidden');
-        }
-
-        const categories = ["Harian Pagi", "Harian Siang", "Harian Sore", "Mingguan", "Bulanan", "Weekend"];
-        const groupedData = {};
-        categories.forEach(cat => groupedData[cat] = []);
-
-        filteredJobs.forEach(job => {
-            // Cek apakah kategori ada di daftar, atau mengandung kata kunci kategori
-            const foundCat = categories.find(c => c === job.category || (job.category && c.toLowerCase().includes(job.category.toLowerCase())));
-            if (foundCat) {
-                groupedData[foundCat].push(job);
-            } else if (job.category) {
-                // Jika ada kategori lain yang belum terdaftar
-                if (!groupedData[job.category]) groupedData[job.category] = [];
-                groupedData[job.category].push(job);
-                if (!categories.includes(job.category)) categories.push(job.category);
-            }
-        });
-
-        categories.forEach(cat => {
-            const jobs = groupedData[cat];
-            if (jobs.length > 0) {
-                // Tambahkan pengecekan otomatis: Jika SEMUA SELESAI
-                const allDone = jobs.every(j => j.status === true);
-                const completeBadge = allDone 
-                    ? `<button onclick="syncToDrive('${cat}')" class="ml-auto px-3 py-1 bg-blue-600 text-[9px] font-black text-white rounded-full uppercase tracking-tighter hover:bg-blue-700 transition-all flex items-center gap-1.5 shadow-sm">
-                        <i data-lucide="share-2" class="w-3 h-3"></i> Sync Drive & WA
-                       </button>` 
-                    : '';
-
-                const section = document.createElement('div');
-                section.className = 'category-section mb-12';
-                section.id = `category-${cat.replace(/\s+/g, '-')}`;
-                section.innerHTML = `
-                    <div class="flex items-center gap-4 mb-6">
-                        <div class="h-px flex-1 bg-gray-100"></div>
-                        <h2 class="text-xs font-black text-gray-400 uppercase tracking-[0.3em] flex items-center gap-2">
-                             <span class="w-2 h-2 rounded-full ${allDone ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}"></span> ${cat}
-                             ${allDone ? '<span class="ml-2 text-blue-500 font-bold">[ALL DONE]</span>' : ''}
-                        </h2>
-                        ${completeBadge}
-                        <div class="h-px flex-1 bg-gray-100"></div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        ${jobs.map(job => renderJobCard(job)).join('')}
-                    </div>
-                `;
-                mainContainer.appendChild(section);
-                
-                // OTOMATIS: Jika semua selesai dan belum pernah di-sync hari ini
-                if (allDone) {
-                    const syncKey = `sync_${cat}_${today}`;
-                    if (!localStorage.getItem(syncKey)) {
-                        console.log(`Automatic Sync Triggered for ${cat}`);
-                        // Panggil sync secara background tanpa interupsi
-                        window.syncToDrive(cat, true); 
-                    }
-                }
-            }
-        });
-
-        if (window.lucide) lucide.createIcons();
-
-    } catch (e) {
-        console.error("Error monitoring:", e);
+        applyFilters();
+    } catch (error) {
+        console.error("Gagal load monitoring jobs:", error);
+        container.innerHTML = `<p class="text-red-500 p-10 text-center">Gagal memuat data: ${error.message}</p>`;
     }
 }
 
-// FUNGSI SYNC DRIVE & WA
-window.syncToDrive = async function(category, isAuto = false) {
-    const today = new Date().toLocaleDateString('en-CA');
-    const syncKey = `sync_${category}_${today}`;
+// 3. APPLY FILTERS & RENDER TABLE-LISTS
+window.applyFilters = function() {
+    const container = document.getElementById("monitoring-container");
+    const emptyState = document.getElementById("monitoring-empty");
+    
+    const userFilter = document.getElementById("filter-user") ? document.getElementById("filter-user").value : "all";
+    const categoryFilter = document.getElementById("filter-category") ? document.getElementById("filter-category").value : "all";
 
-    // Mencegah double sync
+    if (!container) return;
+
+    // Filter global statistics counts (regardless of dropdowns to keep active tabs accurate)
+    const totalCount = allJobs.length;
+    const pendingCount = allJobs.filter(j => !j.status).length;
+    const completedCount = allJobs.filter(j => j.status).length;
+
+    // Update statistics numbers
+    if (document.getElementById('count-all')) document.getElementById('count-all').textContent = totalCount;
+    if (document.getElementById('count-pending')) document.getElementById('count-pending').textContent = pendingCount;
+    if (document.getElementById('count-completed')) document.getElementById('count-completed').textContent = completedCount;
+
+    // Filter array
+    const filtered = allJobs.filter(job => {
+        // Status checks
+        if (currentFilter === 'pending' && job.status) return false;
+        if (currentFilter === 'completed' && !job.status) return false;
+
+        // User checks
+        if (userFilter !== 'all' && job.cleanerId !== userFilter) return false;
+
+        // Category checks
+        if (categoryFilter !== 'all' && job.category !== categoryFilter) return false;
+
+        return true;
+    });
+
+    // Urutkan pekerjaan berdasarkan prioritas petugas: Pak Kardi, Mas Randy, Mas Saiful, lalu lainnya
+    filtered.sort((a, b) => {
+        const pA = getCleanerPriority(a.cleanerName);
+        const pB = getCleanerPriority(b.cleanerName);
+        if (pA !== pB) return pA - pB;
+        return (a.description || "").localeCompare(b.description || "");
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = "";
+        emptyState.classList.remove('hidden');
+        return;
+    } else {
+        emptyState.classList.add('hidden');
+    }
+
+    container.innerHTML = "";
+
+    // Categories bucket
+    const defaultCategories = ["Harian Pagi", "Harian Siang", "Harian Sore", "Mingguan", "Bulanan", "Weekend"];
+    const grouped = {};
+    defaultCategories.forEach(cat => grouped[cat] = []);
+
+    filtered.forEach(job => {
+        const matchingCat = defaultCategories.find(c => c === job.category) || job.category || "Lainnya";
+        if (!grouped[matchingCat]) {
+            grouped[matchingCat] = [];
+        }
+        grouped[matchingCat].push(job);
+    });
+
+    const categoriesToRender = Object.keys(grouped).filter(cat => grouped[cat].length > 0);
+
+    categoriesToRender.forEach(cat => {
+        const jobs = grouped[cat];
+        const allDone = jobs.every(j => j.status === true);
+
+        // Sync button & Auto Sync logic
+        const syncButton = allDone 
+            ? `<button onclick="syncToDrive('${cat}')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] uppercase tracking-wide rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
+                <i data-lucide="share-2" class="w-3.5 h-3.5"></i> Sync Drive & WA
+               </button>`
+            : `<span class="text-[9px] font-black text-orange-400 bg-orange-50 border border-orange-100 px-3 py-1 rounded-full uppercase tracking-wider">Sedang Berjalan</span>`;
+
+        // Generate dynamically rows
+        let rowsHtml = "";
+        jobs.forEach((job, index) => {
+            const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+            const rawDate = job.status ? (job.assignedDate || todayStr) : todayStr;
+            const dateStr = formatIndonesianDate(rawDate);
+            const proofPhoto = job.photoUrl;
+
+            // Custom proof visual
+            let proofHtml = "";
+            if (proofPhoto) {
+                // Safeguard against bad URL
+                proofHtml = `
+                    <div class="flex justify-center">
+                        <button onclick="openLightbox('${proofPhoto}')" class="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-xl transition-all inline-flex items-center gap-1 shadow-2xs border border-green-150" title="Klik untuk lihat bukti foto">
+                            <i data-lucide="image" class="w-3.5 h-3.5 text-green-600"></i>
+                            <span class="text-[10px] font-black uppercase px-1 tracking-tight">Foto</span>
+                        </button>
+                    </div>`;
+            } else {
+                proofHtml = `
+                    <div class="flex flex-col items-center justify-center text-gray-300">
+                        <i data-lucide="camera-off" class="w-4 h-4 text-gray-300"></i>
+                        <span class="text-[8px] font-bold text-gray-400 mt-0.5 uppercase tracking-tighter">Belum Ada</span>
+                    </div>`;
+            }
+
+            // Render status Badge
+            const statusBadge = job.status
+                ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-50 rounded-full border border-green-150 text-[9px] font-black text-green-600 uppercase tracking-widest">
+                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Selesai
+                   </span>`
+                : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 rounded-full border border-orange-150 text-[9px] font-black text-orange-500 uppercase tracking-widest">
+                    <span class="w-1.5 h-1.5 rounded-full bg-orange-400 animate-ping"></span> Pending
+                   </span>`;
+
+            rowsHtml += `
+                <tr class="hover:bg-gray-50/50 transition-colors">
+                    <td class="px-6 py-4 font-mono text-center text-xs text-gray-400 font-bold">${index + 1}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
+                    <td class="px-6 py-4">
+                        <span class="text-xs font-black text-gray-800 uppercase truncate max-w-[180px]" title="${job.cleanerName || 'Staff Lapangan'}">
+                            ${job.cleanerName || 'Staff Lapangan'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <p class="text-xs font-medium text-gray-700 leading-relaxed max-w-[450px] break-words" title="${job.description}">
+                            ${job.description}
+                        </p>
+                    </td>
+                    <td class="px-6 py-4 text-center">${proofHtml}</td>
+                    <td class="px-6 py-4 text-xs font-semibold text-gray-400 font-mono">${dateStr}</td>
+                </tr>
+            `;
+        });
+
+        // HTML card structure of category section
+        const categorySec = document.createElement('div');
+        categorySec.className = "bg-white rounded-3xl border border-gray-100 shadow-xs overflow-hidden";
+        categorySec.innerHTML = `
+            <!-- HEADER -->
+            <div class="px-8 py-4.5 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full ${allDone ? 'bg-green-500 animate-pulse' : 'bg-orange-400 animate-pulse'}"></div>
+                    <h3 class="text-xs font-black text-[#075E3D] uppercase tracking-[0.2em]">${cat}</h3>
+                    <span class="text-[9px] font-black text-gray-400 bg-white border border-gray-100 px-2.5 py-0.5 rounded-lg">${jobs.length} Tugas</span>
+                    ${allDone ? `<span class="text-[9px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md uppercase tracking-tight">[ALL FINISHED]</span>` : ''}
+                </div>
+                <div>
+                    ${syncButton}
+                </div>
+            </div>
+
+            <!-- TABLE BODY -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[700px]">
+                    <thead>
+                        <tr class="border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-white">
+                            <th class="px-6 py-3.5 w-12 text-center">No</th>
+                            <th class="px-6 py-3.5 w-28">Status</th>
+                            <th class="px-6 py-3.5 w-40">Petugas</th>
+                            <th class="px-6 py-3.5">Deskripsi Pekerjaan</th>
+                            <th class="px-6 py-3.5 w-24 text-center">Bukti Foto</th>
+                            <th class="px-6 py-3.5 w-25">Tanggal</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50 bg-white">
+                        ${rowsHtml}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        container.appendChild(categorySec);
+
+        // Auto Sync triggered once if all done
+        if (allDone) {
+            const todayStr = new Date().toLocaleDateString('en-CA');
+            const syncKey = `sync_${cat}_${todayStr}`;
+            if (!localStorage.getItem(syncKey)) {
+                console.log(`Auto triggers Sync for ${cat}`);
+                window.syncToDrive(cat, true);
+            }
+        }
+    });
+
+    if (window.lucide) lucide.createIcons();
+}
+
+// 4. SET STATUS FILTER (TABS)
+window.setFilter = function(filter) {
+    currentFilter = filter;
+    
+    const filters = ['all', 'pending', 'completed'];
+    filters.forEach(f => {
+        const btn = document.getElementById(`filter-${f}`);
+        if (!btn) return;
+        if (f === filter) {
+            btn.className = "px-4 py-2 rounded-xl text-xs font-bold transition-all bg-[#075E3D] text-white shadow-sm";
+        } else {
+            btn.className = "px-4 py-2 rounded-xl text-xs font-bold transition-all text-gray-400 hover:text-gray-600 hover:bg-gray-50";
+        }
+    });
+
+    applyFilters();
+}
+
+// 5. SYNC DRIVE & WHATSAPP WEBHOOK
+window.syncToDrive = async function(category, isAuto = false) {
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const syncKey = `sync_${category}_${todayStr}`;
+
+    // Prevent double sync
     if (localStorage.getItem(syncKey) === "true") return;
     
     try {
-        const qJobs = query(collection(db, "jobdesk"), where("category", "==", category));
-        const jobSnap = await getDocs(qJobs);
-        const reportsRef = collection(db, "reports");
-        const qReports = query(reportsRef, where("assignedDate", "==", today), where("category", "==", category));
-        const reportSnap = await getDocs(qReports);
-        
-        const reportsMap = {};
-        reportSnap.forEach(d => reportsMap[d.data().jobId] = d.data());
-        
+        // Collect done tasks
         const jobsDone = [];
         let cleanerName = "Staff Lapangan";
-        
-        jobSnap.forEach(d => {
-            const report = reportsMap[d.id];
-            if (report) {
+
+        const categoryJobs = allJobs.filter(j => j.category === category);
+        categoryJobs.forEach(job => {
+            if (job.status) {
                 jobsDone.push({
-                    description: d.data().description,
-                    photoUrl: report.photoUrl || report.imageUrl
+                    description: job.description,
+                    photoUrl: job.photoUrl || null
                 });
-                cleanerName = report.cleanerName || cleanerName;
+                if (job.cleanerName) {
+                    cleanerName = job.cleanerName;
+                }
             }
         });
 
         if (jobsDone.length === 0) return;
 
-        // Visual Feedback (jika manual)
+        // Visual loading trigger (if triggered manual)
         let btn;
-        if (!isAuto) {
-            btn = event.currentTarget;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="animate-spin" data-lucide="loader-2"></i> Syncing...';
-            if (window.lucide) lucide.createIcons();
+        if (!isAuto && window.event) {
+            btn = window.event.currentTarget;
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="animate-spin text-white"></i> Syncing...';
+                if (window.lucide) lucide.createIcons();
+            }
         }
 
         const gasWebhookUrl = "https://script.google.com/macros/s/AKfycbzDfkorxgCukFyWVMTRFtlD4rGsnOGYixXXwHgc_mdnTuLlXu3T8QCelH4TRAelEC88/exec"; 
 
-        const response = await fetch(gasWebhookUrl, {
+        await fetch(gasWebhookUrl, {
             method: 'POST',
-            mode: 'no-cors', // Penting untuk GAS
+            mode: 'no-cors',
             body: JSON.stringify({
                 cleanerName,
                 category,
-                date: today,
+                date: todayStr,
                 jobsDone
             })
         });
 
-        // Karena mode no-cors, kita tidak bisa baca response body, 
-        // tapi kita asumsikan berhasil jika tidak lempar error fetch.
+        // Set key to local storage to persist sync status today
         localStorage.setItem(syncKey, "true");
         
         if (!isAuto) {
             alert(`Selesai! Laporan ${category} telah diupload ke Drive & dikirim ke WhatsApp.`);
-            location.reload(); // Refresh untuk update badge
+            applyFilters();
         } else {
             console.log(`Auto-Sync Success for ${category}`);
         }
@@ -236,148 +494,36 @@ window.syncToDrive = async function(category, isAuto = false) {
     }
 }
 
-function renderJobCard(data) {
-    const today = new Date().toLocaleDateString('en-CA'); // format: YYYY-MM-DD
-    const isDaily = data.category && data.category.includes("Harian");
-    
-    // Fallback data
-    let displayStatus = data.status || false;
-    let displayPhoto = data.photoUrl || data.imageUrl; 
-    
-    // TAHAP 1: Validasi URL Gambar
-    // Jika upload dari HP salah (mengirim path lokal seperti /data/user/0/...), kita abaikan
-    if (displayPhoto && !displayPhoto.includes('http')) {
-        displayPhoto = null;
+// 7. LIGHTBOX CONTROLS
+window.openLightbox = function(url) {
+    const lightbox = document.getElementById('photo-lightbox');
+    const image = document.getElementById('lightbox-img');
+    if (!lightbox || !image) return;
+
+    // Gunakan proxy weserv langsung agar bypass blokir provider internet di Indonesia dan load instan!
+    let targetUrl = url;
+    if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('images.weserv.nl')) {
+        targetUrl = `https://images.weserv.nl/?url=${encodeURIComponent(url)}`;
     }
 
-    // TAHAP 2: Logika Reset Tampilan (Hanya untuk Dashboard Monitoring)
-    // Jika ini tugas Harian, tapi 'assignedDate' di database bukan Hari Ini, 
-    // kita anggap petugas BELUM mengerjakan tugas UNTUK HARI INI.
-    if (isDaily && data.assignedDate && data.assignedDate !== today && !data.status) {
-        displayStatus = false;
-        displayPhoto = null;
-    }
-
-    // Tanggal Tampilan
-    const dateStr = data.assignedDate || (data.createdAt ? new Date(data.createdAt.seconds * 1000).toLocaleDateString('id-ID') : '-');
-    
-    const statusLabel = displayStatus ? 'SELESAI' : 'PENDING';
-    const statusColor = displayStatus ? 'text-green-600 bg-green-50 border-green-100' : 'text-orange-500 bg-orange-50 border-orange-100';
-    const statusIcon = displayStatus ? 'check-circle' : 'clock';
-
-    // Gunakan Image Proxy (weserv) untuk memastikan gambar tampil melewati blokir ISP / referer
-    const safePhotoUrl = displayPhoto ? `https://images.weserv.nl/?url=${encodeURIComponent(displayPhoto)}` : null;
-
-    return `
-        <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden hover:shadow-xl transition-all duration-500 group">
-            <div class="h-48 bg-gray-50 relative overflow-hidden flex items-center justify-center">
-                ${displayPhoto 
-                    ? `<img src="${safePhotoUrl}" 
-                         class="w-full h-full object-cover cursor-pointer transition-transform duration-700 group-hover:scale-110" 
-                         onclick="openPhoto('${displayPhoto}')" 
-                         referrerpolicy="no-referrer"
-                         onerror="this.onerror=null; this.src='https://placehold.co/400x300?text=Gambar+Gagal+Dimuat+(Cek+ISP)'">` 
-                    : `<div class="flex flex-col items-center gap-3 text-gray-200">
-                        <i data-lucide="camera-off" class="w-12 h-12"></i>
-                        <span class="text-[9px] font-black uppercase tracking-[0.2em] text-center px-8 leading-loose">
-                            ${isDaily && data.assignedDate !== today ? 'BELUM ADA<br>LAPORAN HARI INI' : 'MENUNGGU BUKTI FOTO'}
-                        </span>
-                       </div>`
-                }
-                
-                <div class="absolute top-4 left-4">
-                    <span class="flex items-center gap-1.5 px-3 py-1 bg-white/90 backdrop-blur-md rounded-full text-[9px] font-black ${statusColor} border shadow-sm tracking-widest">
-                        <i data-lucide="${statusIcon}" class="w-3 h-3"></i> ${statusLabel}
-                    </span>
-                </div>
-                
-                ${isDaily ? `
-                <div class="absolute bottom-4 right-4">
-                    <span class="px-2 py-1 bg-black/20 backdrop-blur-sm rounded-md text-[8px] font-bold text-white uppercase tracking-tighter">
-                        DAILY TASK
-                    </span>
-                </div>` : ''}
-            </div>
-
-            <div class="p-6">
-                <div class="flex items-center gap-3 mb-5">
-                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center text-green-700 shadow-inner">
-                        <i data-lucide="user" class="w-5 h-5"></i>
-                    </div>
-                    <div class="min-w-0 font-bold">
-                        <h4 class="text-sm font-black text-gray-900 truncate tracking-tight">${data.cleanerName || 'Staff Lapangan'}</h4>
-                        <div class="flex items-center gap-2">
-                            <span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest">${dateStr}</span>
-                            <span class="w-1 h-1 rounded-full bg-gray-200"></span>
-                            <span class="text-[9px] font-bold text-green-500 uppercase tracking-widest">${data.category || 'REGULER'}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="relative mb-5">
-                    <div class="absolute left-0 top-0 w-1 h-full bg-green-50 rounded-full"></div>
-                    <p class="text-xs text-gray-500 leading-relaxed italic pl-4 line-clamp-2">
-                        "${data.description || 'Pekerjaan rutin sesuai SOP...'}"
-                    </p>
-                </div>
-
-                <div class="flex flex-wrap items-center justify-between gap-3 pt-5 border-t border-gray-100">
-                    <div class="flex gap-2">
-                        <button onclick="openPhoto('${displayPhoto}')" class="${displayPhoto ? 'flex' : 'hidden'} items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-full text-[9px] font-black uppercase tracking-[0.1em] hover:bg-green-600 transition-all shadow-md">
-                            <i data-lucide="external-link" class="w-3 h-3"></i> Lihat
-                        </button>
-                        ${displayPhoto ? `
-                        <a href="${displayPhoto}" target="_blank" class="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-400 rounded-full text-[9px] font-black uppercase tracking-[0.1em] hover:bg-gray-50 transition-all">
-                            <i data-lucide="link" class="w-3 h-3"></i> Link
-                        </a>` : ''}
-                    </div>
-                    
-                    ${!displayPhoto ? `
-                        <div class="flex items-center gap-2 text-orange-400">
-                            <span class="relative flex h-2 w-2">
-                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                              <span class="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                            </span>
-                            <span class="text-[9px] font-black uppercase tracking-widest">Waiting</span>
-                        </div>
-                    ` : ''}
-                </div>
-            </div>
-        </div>
-    `;
+    image.src = targetUrl;
+    image.onerror = function() {
+        if (targetUrl !== url) {
+            image.src = url; // Fallback ke link asli jika proxy bermasalah
+        }
+    };
+    lightbox.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
 }
 
-// HELPER DOWNLOAD FOTO
-window.downloadImage = async function(url, filename) {
-    try {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const blobUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = `${filename}.jpg`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(blobUrl);
-    } catch (e) {
-        console.error("Gagal download:", e);
-        // Fallback jika fetch gagal (biasanya CORS)
-        window.open(url, '_blank');
-    }
+window.closeLightbox = function() {
+    const lightbox = document.getElementById('photo-lightbox');
+    if (lightbox) lightbox.classList.add('hidden');
 }
 
-window.openPhoto = (url) => {
-    const modal = document.getElementById('photo-modal');
-    const img = document.getElementById('modal-img');
-    img.src = url;
-    modal.classList.remove('hidden');
-}
-
-window.loadMonitoringData = loadMonitoringData;
-
+// 8. BOOTSTRAP
 document.addEventListener("DOMContentLoaded", async () => {
     await loadComponents();
-    populateUsers();
-    loadMonitoringData();
+    await populateUsers();
+    await loadMonitoringJobs();
 });

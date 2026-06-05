@@ -1,10 +1,45 @@
 <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-30">
-    <h2 id="page-title" class="text-lg font-bold text-gray-800 tracking-tight">Overview</h2>
-    <div class="flex items-center gap-4">
-        <div class="text-right hidden sm:block">
-            <p class="text-sm font-bold text-gray-900 leading-tight">Administrator</p>
-            <p class="text-[10px] text-green-600 font-bold uppercase tracking-widest">● Online</p>
+    <h2 id="page-title" class="text-lg font-bold text-gray-800 tracking-tight">
+        PLN ULP Mantingan
+    </h2>
+
+    <div class="flex items-center gap-6">
+
+        <!-- Tanggal dan Jam -->
+        <div class="hidden md:flex items-center gap-2 text-gray-700">
+            <!-- Icon Kalender -->
+            <svg xmlns="http://www.w3.org/2000/svg"
+                 class="w-5 h-5 text-[#075E3D]"
+                 fill="none"
+                 viewBox="0 0 24 24"
+                 stroke="currentColor">
+                <path stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 7V3m8 4V3m-9 8h10m-13 9h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v11a2 2 0 002 2z"/>
+            </svg>
+
+            <div class="text-sm">
+                <p id="tanggal" class="font-semibold">
+                    Jumat, 05 Juni 2026
+                </p>
+                <p id="jam" class="text-xs text-gray-500">
+                    10:03 WIB
+                </p>
+            </div>
         </div>
+
+        <!-- Administrator -->
+        <div class="text-right hidden sm:block">
+            <p class="text-sm font-bold text-gray-900 leading-tight">
+                Administrator
+            </p>
+            <p class="text-[10px] text-green-600 font-bold uppercase tracking-widest">
+                ● Online
+            </p>
+        </div>
+
+        <!-- Avatar -->
         <div class="w-10 h-10 bg-[#075E3D] rounded-full flex items-center justify-center text-white font-bold shadow-lg shadow-green-900/20">
             A
         </div>

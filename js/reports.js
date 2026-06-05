@@ -10,6 +10,87 @@ import {
 // Global array untuk menyimpan data yang sedang difilter
 let currentData = [];
 
+// HELPER UNTUK MENGURUTKAN LAPORAN BERDASARKAN KATEGORI & TANGGAL
+function sortReports(data) {
+    const bucketMapping = {
+        "Harian Pagi": 1,
+        "Harian Siang": 1,
+        "Harian Sore": 1,
+        "Mingguan": 2,
+        "Weekend": 3,
+        "Bulanan": 4
+    };
+    
+    const harianOrder = {
+        "Harian Pagi": 1,
+        "Harian Siang": 2,
+        "Harian Sore": 3
+    };
+    
+    return [...data].sort((a, b) => {
+        const catA = a.category || "";
+        const catB = b.category || "";
+        
+        const bucketA = bucketMapping[catA] || 99;
+        const bucketB = bucketMapping[catB] || 99;
+        
+        // 1. Urutkan berdasarkan Bucket terlebih dahulu
+        if (bucketA !== bucketB) {
+            return bucketA - bucketB;
+        }
+        
+        // 2. Jika berada di bucket yang sama:
+        if (bucketA === 1) {
+            // Bucket 1: Laporan Harian (Pagi, Siang, Sore)
+            // Urutkan berdasarkan tanggal terlebih dahulu (dari terlama ke terbaru)
+            const dateA = a.assignedDate || "";
+            const dateB = b.assignedDate || "";
+            if (dateA !== dateB) {
+                return dateA.localeCompare(dateB);
+            }
+            // Jika tanggal sama, urutkan berdasarkan sub-kategori: Pagi -> Siang -> Sore
+            const orderA = harianOrder[catA] || 99;
+            const orderB = harianOrder[catB] || 99;
+            return orderA - orderB;
+        } else {
+            // Untuk bucket lainnya (Mingguan, Weekend, Bulanan, dll):
+            // Urutkan secara kronologis (dari terlama ke terbaru) berdasarkan tanggal
+            const dateA = a.assignedDate || "";
+            const dateB = b.assignedDate || "";
+            if (dateA !== dateB) {
+                return dateA.localeCompare(dateB);
+            }
+            return catA.localeCompare(catB);
+        }
+    });
+}
+
+// HELPER UNTUK MENGHAPUS INISIAL PETUGAS (PK, MR, MS dll)
+function cleanName(name) {
+    if (!name) return "";
+    let cleaned = name.trim();
+    cleaned = cleaned.replace(/^(PK|MR|MS|CS|Admin)\s+/i, "");
+    return cleaned;
+}
+
+// FORMAT TANGGAL INDONESIA (E.g., 05 Juni 2026)
+function formatIndonesianDate(dateStr) {
+    if (!dateStr) return "-";
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    const year = parts[0];
+    const monthIndex = parseInt(parts[1]) - 1;
+    const day = parts[2];
+    
+    const indonesianMonths = [
+        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    ];
+    
+    if (monthIndex < 0 || monthIndex > 11) return dateStr;
+    return `${day} ${indonesianMonths[monthIndex]} ${year}`;
+}
+
 // Load Daftar User untuk Dropdown
 async function populateUserFilter() {
     const select = document.getElementById('report-user');
@@ -23,7 +104,7 @@ async function populateUserFilter() {
             if (!isAdmin) {
                 const option = document.createElement('option');
                 option.value = docSnap.id;
-                option.textContent = data.name;
+                option.textContent = cleanName(data.name);
                 select.appendChild(option);
             }
         });
@@ -39,6 +120,9 @@ async function loadReportData() {
     const startDateInput = document.getElementById("report-start-date");
     const endDateInput = document.getElementById("report-end-date");
     const printPeriod = document.getElementById("print-period");
+    const limitInput = document.getElementById("report-limit");
+    const entriesShownLabel = document.getElementById("entries-shown");
+    const entriesTotalLabel = document.getElementById("entries-total");
 
     if (!tableBody || !userIdInput || !categoryIdInput || !startDateInput || !endDateInput) return;
 
@@ -46,8 +130,11 @@ async function loadReportData() {
     const categoryId = categoryIdInput.value;
     const startDate = startDateInput.value;
     const endDate = endDateInput.value;
+    const limitVal = limitInput ? limitInput.value : "25";
 
-    if (printPeriod) printPeriod.innerText = `PERIODE: ${startDate || 'Awal'} s/d ${endDate || 'Terkini'} (${categoryId === 'all' ? 'Semua Kategori' : categoryId})`;
+    if (printPeriod) {
+        printPeriod.innerText = `PERIODE: ${startDate ? formatIndonesianDate(startDate) : 'Awal'} s/d ${endDate ? formatIndonesianDate(endDate) : 'Terkini'} (${categoryId === 'all' ? 'Semua Kategori' : categoryId})`;
+    }
 
     tableBody.innerHTML = `<tr class="no-print"><td colspan="6" class="p-10 text-center"><div class="flex justify-center"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div></div></td></tr>`;
     evidenceList.innerHTML = "";
@@ -58,6 +145,8 @@ async function loadReportData() {
         const snapshot = await getDocs(q);
         
         tableBody.innerHTML = "";
+        
+        const filteredDocs = [];
         
         snapshot.forEach(docSnap => {
             const data = docSnap.data();
@@ -71,8 +160,7 @@ async function loadReportData() {
 
             if (matchUser && matchCat && matchStart && matchEnd) {
                 const id = docSnap.id;
-                const [y, m, d] = jobDate.split('-');
-                const formattedDatePreview = `${d}/${m}/${y}`;
+                const formattedDatePreview = formatIndonesianDate(jobDate);
                 
                 // Mendukung foto tunggal (lama) atau multiple (baru)
                 let photos = data.photoUrls || [];
@@ -80,67 +168,90 @@ async function loadReportData() {
                     photos = [data.photoUrl || data.imageUrl];
                 }
 
-                const item = { id, formattedDate: formattedDatePreview, photos, ...data };
-                currentData.push(item);
-
-                const hasPhotos = photos.length > 0;
-                const firstPhoto = hasPhotos ? photos[0] : null;
-                const isValidPhoto = firstPhoto && firstPhoto.startsWith('http');
-                
-                // Gunakan proxy weserv untuk tampilan preview di tabel (CORS friendly)
-                const safePhotoUrl = isValidPhoto ? `https://images.weserv.nl/?url=${encodeURIComponent(firstPhoto)}` : null;
-                
-                const cleanDate = formattedDatePreview.replace(/\//g, '-');
-                const cleanCat = (data.category || 'Umum').replace(/[^a-z0-9]/gi, '_');
-                const cleanDesc = (data.description || 'Pekerjaan').replace(/[^a-z0-9]/gi, '_');
-                const cleanName = (data.cleanerName || 'Staf').replace(/[^a-z0-9]/gi, '_');
-                // Format: TANGGAL__KATEGORI__DESKRIPSI__PETUGAS
-                const downloadName = `${cleanDate}__${cleanCat}__${cleanDesc}__${cleanName}`;
-                
-                tableBody.innerHTML += `
-                    <tr class="hover:bg-gray-50 transition-all font-medium text-gray-700">
-                        <td class="px-8 py-4 text-xs font-mono">${formattedDatePreview}</td>
-                        <td class="px-8 py-4 text-sm font-bold text-gray-900">${data.cleanerName}</td>
-                        <td class="px-8 py-4"><span class="text-[10px] bg-gray-100 px-2 py-1 rounded-md uppercase">${data.category}</span></td>
-                        <td class="px-8 py-4 text-xs max-w-xs truncate">${data.description || '-'}</td>
-                        <td class="px-8 py-4">
-                            <span class="text-[10px] font-bold ${data.status ? 'text-green-600' : 'text-orange-500'}">
-                                ${data.status ? 'SELESAI' : 'PENDING'}
-                            </span>
-                        </td>
-                        <td class="px-8 py-4 text-center">
-                            ${hasPhotos 
-                                ? `<div class="flex items-center justify-center gap-2 text-green-500">
-                                     <div class="relative">
-                                         <i data-lucide="image" class="w-4 h-4"></i>
-                                         ${photos.length > 1 ? `<span class="absolute -top-2 -right-2 bg-green-600 text-white text-[8px] px-1 rounded-full">${photos.length}</span>` : ''}
-                                     </div>
-                                     <button onclick="downloadReportImage('${firstPhoto}', '${downloadName}')" class="p-1 hover:bg-green-50 rounded no-print" title="Download Foto Pertama"><i data-lucide="download" class="w-3 h-3"></i></button>
-                                   </div>` 
-                                : '<i data-lucide="x" class="w-4 h-4 mx-auto text-gray-300"></i>'}
-                        </td>
-                    </tr>`;
-
-                // Render Evidence Image (Bisa banyak)
-                let photoHtml = '';
-                if (hasPhotos) {
-                    photos.forEach(p => {
-                        const sP = `https://images.weserv.nl/?url=${encodeURIComponent(p)}`;
-                        photoHtml += `<img src="${sP}" class="w-full max-h-[400px] object-cover rounded-xl border border-gray-100 mb-2" referrerpolicy="no-referrer" onerror="this.onerror=null; this.style.display='none';">`;
-                    });
-                } else {
-                    photoHtml = '<div class="p-10 bg-gray-50 rounded-xl text-center text-xs text-gray-400 font-bold border-2 border-dashed border-gray-200">FOTO TIDAK TERLAMPIR / INVALID</div>';
-                }
-
-                evidenceList.innerHTML += `
-                    <div class="report-card p-6 border border-gray-200 rounded-2xl bg-white mb-6">
-                        <div class="flex justify-between items-center mb-4 border-b pb-3">
-                            <div><h4 class="text-sm font-black text-gray-900">${data.cleanerName}</h4><p class="text-[10px] font-bold text-gray-400 uppercase">${data.category} | ${formattedDatePreview}</p></div>
-                        </div>
-                        <p class="text-xs text-gray-600 italic mb-4">"${data.description || 'Pekerjaan selesai...'}"</p>
-                        ${photoHtml}
-                    </div>`;
+                const cleanedCleanerName = cleanName(data.cleanerName);
+                const item = { id, formattedDate: formattedDatePreview, photos, ...data, cleanerName: cleanedCleanerName };
+                filteredDocs.push(item);
             }
+        });
+
+        const totalCount = filteredDocs.length;
+        
+        // Limit slicing
+        let displayedDocs = [...filteredDocs];
+        if (limitVal !== "all") {
+            const limitNum = parseInt(limitVal, 10);
+            if (!isNaN(limitNum)) {
+                displayedDocs = filteredDocs.slice(0, limitNum);
+            }
+        }
+        
+        currentData = filteredDocs;
+
+        if (entriesShownLabel) entriesShownLabel.innerText = displayedDocs.length;
+        if (entriesTotalLabel) entriesTotalLabel.innerText = totalCount;
+
+        displayedDocs.forEach(item => {
+            const formattedDatePreview = item.formattedDate;
+            const cleanedCleanerName = item.cleanerName;
+            const photos = item.photos || [];
+            
+            const hasPhotos = photos.length > 0;
+            const firstPhoto = hasPhotos ? photos[0] : null;
+            const isValidPhoto = firstPhoto && firstPhoto.startsWith('http');
+            
+            // Gunakan proxy weserv untuk tampilan preview di tabel (CORS friendly)
+            const safePhotoUrl = isValidPhoto ? `https://images.weserv.nl/?url=${encodeURIComponent(firstPhoto)}` : null;
+            
+            const cleanDate = formattedDatePreview.replace(/[^a-zA-Z0-9]/g, '_');
+            const cleanCat = (item.category || 'Umum').replace(/[^a-z0-9]/gi, '_');
+            const cleanDesc = (item.description || 'Pekerjaan').replace(/[^a-z0-9]/gi, '_');
+            const cleanNameStr = cleanedCleanerName.replace(/[^a-z0-9]/gi, '_');
+            // Format: TANGGAL__KATEGORI__DESKRIPSI__PETUGAS
+            const downloadName = `${cleanDate}__${cleanCat}__${cleanDesc}__${cleanNameStr}`;
+            
+            tableBody.innerHTML += `
+                <tr class="hover:bg-gray-50 transition-all font-medium text-gray-700">
+                    <td class="px-8 py-4 text-xs font-mono">${formattedDatePreview}</td>
+                    <td class="px-8 py-4 text-sm font-bold text-gray-900">${cleanedCleanerName}</td>
+                    <td class="px-8 py-4"><span class="text-[10px] bg-green-50 text-green-600 px-3 py-1 rounded-full uppercase font-black tracking-wider">${item.category}</span></td>
+                    <td class="px-8 py-4 text-xs max-w-xs truncate leading-relaxed text-gray-500">${item.description || '-'}</td>
+                    <td class="px-8 py-4">
+                        <span class="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${item.status ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-400'}">
+                            ${item.status ? 'SELESAI' : 'PENDING'}
+                        </span>
+                    </td>
+                    <td class="px-8 py-4 text-center">
+                        ${hasPhotos 
+                            ? `<div class="flex items-center justify-center gap-2 text-green-500">
+                                 <div class="relative cursor-pointer hover:scale-110 transition-transform text-[#075E3D]" onclick="openLightbox('${firstPhoto}')" title="Lihat Foto">
+                                     <i data-lucide="image" class="w-4 h-4"></i>
+                                     ${photos.length > 1 ? `<span class="absolute -top-2 -right-2 bg-green-600 text-white text-[8px] px-1 rounded-full pointer-events-none">${photos.length}</span>` : ''}
+                                 </div>
+                                 <button onclick="downloadReportImage('${firstPhoto}', '${downloadName}')" class="p-1 hover:bg-green-100 rounded no-print text-[#075E3D]" title="Download Foto Pertama"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
+                               </div>` 
+                            : '<i data-lucide="x" class="w-4 h-4 mx-auto text-gray-300"></i>'}
+                    </td>
+                </tr>`;
+
+            // Render Evidence Image (Bisa banyak)
+            let photoHtml = '';
+            if (hasPhotos) {
+                photos.forEach(p => {
+                    const sP = `https://images.weserv.nl/?url=${encodeURIComponent(p)}`;
+                    photoHtml += `<img src="${sP}" class="w-full max-h-[400px] object-cover rounded-xl border border-gray-100 mb-2" referrerpolicy="no-referrer" onerror="this.onerror=null; this.style.display='none';">`;
+                });
+            } else {
+                photoHtml = '<div class="p-10 bg-gray-50 rounded-xl text-center text-xs text-gray-400 font-bold border-2 border-dashed border-gray-200">FOTO TIDAK TERLAMPIR / INVALID</div>';
+            }
+
+            evidenceList.innerHTML += `
+                <div class="report-card p-6 border border-gray-200 rounded-2xl bg-white mb-6">
+                    <div class="flex justify-between items-center mb-4 border-b pb-3">
+                        <div><h4 class="text-sm font-black text-gray-900">${cleanedCleanerName}</h4><p class="text-[10px] font-bold text-gray-400 uppercase">${item.category} | ${formattedDatePreview}</p></div>
+                    </div>
+                    <p class="text-xs text-gray-600 italic mb-4">"${item.description || 'Pekerjaan selesai...'}"</p>
+                    ${photoHtml}
+                </div>`;
         });
 
         if (currentData.length === 0) emptyState.classList.remove('hidden');
@@ -175,9 +286,12 @@ window.downloadAllPhotosZip = async function() {
     const btn = document.getElementById('btn-zip');
     const originalText = btn.innerHTML;
     
+    // Urutkan data berdasarkan Kategori & Tanggal terlama ke terbaru
+    const sortedDocs = sortReports(currentData);
+    
     // Kumpulkan SEMUA foto dari SEMUA item
     let allPhotoTasks = [];
-    currentData.forEach(item => {
+    sortedDocs.forEach(item => {
         const photos = item.photos || [];
         photos.forEach((url, i) => {
             if (url && (url.startsWith('http') || url.startsWith('https'))) {
@@ -218,13 +332,13 @@ window.downloadAllPhotosZip = async function() {
                 
                 const blob = await response.blob();
                 
-                const cleanDate = item.formattedDate.replace(/\//g, '-');
+                const cleanDate = item.formattedDate.replace(/[^a-zA-Z0-9]/g, '_');
                 const cleanCat = (item.category || 'Umum').replace(/[^a-z0-9]/gi, '_');
                 const cleanDesc = (item.description || 'Pekerjaan').replace(/[^a-z0-9]/gi, '_');
-                const cleanName = (item.cleanerName || 'Staf').replace(/[^a-z0-9]/gi, '_');
+                const cleanNameStr = (item.cleanerName || 'Staf').replace(/[^a-z0-9]/gi, '_');
                 
                 // Format: TANGGAL__KATEGORI__DESKRIPSI__PETUGAS__fotoX.jpg
-                const fileName = `${cleanDate}__${cleanCat}__${cleanDesc}__${cleanName}__foto${photoIndex + 1}.jpg`;
+                const fileName = `${cleanDate}__${cleanCat}__${cleanDesc}__${cleanNameStr}__foto${photoIndex + 1}.jpg`;
                 
                 folder.file(fileName, blob);
             } catch (err) {
@@ -290,7 +404,7 @@ async function getBase64FromUrl(url) {
 // FUNGSI EKSPOR KE WORD (DOC) DENGAN GAMBAR
 window.exportToWord = async function() {
     if (currentData.length === 0) {
-        alert("Tidak ada data untuk diekspor. Silakan filter data terlebih dahulu.");
+        alert("Tidak ada data untuk diekspor. Silakan ubah filter periode atau petugas.");
         return;
     }
 
@@ -303,7 +417,7 @@ window.exportToWord = async function() {
 
     const startDate = document.getElementById('report-start-date').value;
     const endDate = document.getElementById('report-end-date').value;
-    const periodStr = `${startDate} s/d ${endDate}`;
+    const periodStr = `${formatIndonesianDate(startDate)} s/d ${formatIndonesianDate(endDate)}`;
 
     // Header HTML untuk memicu Microsoft Word mengenali formatnya
     const header = `
@@ -311,13 +425,14 @@ window.exportToWord = async function() {
         <head><meta charset='utf-8'><title>Laporan CS</title>
         <style>
             body { font-family: 'Calibri', 'Arial', sans-serif; }
-            table { border-collapse: collapse; width: 100%; border: 1pt solid windowtext; }
-            th, td { border: 1pt solid windowtext; padding: 10px; text-align: left; font-size: 10pt; vertical-align: top; }
+            table { border-collapse: collapse; width: 100%; border: 1pt solid #333333; }
+            th, td { border: 1pt solid #333333; padding: 8px; text-align: left; font-size: 9pt; vertical-align: top; }
             th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
-            .header-info { margin-bottom: 20px; text-align: center; }
-            .title { font-size: 14pt; font-weight: bold; margin-bottom: 5px; }
-            .subtitle { font-size: 12pt; margin-bottom: 15px; }
-            .img-box { width: 150px; height: auto; border: 1px solid #ccc; display: block; margin: 0 auto; }
+            .header-info { margin-bottom: 25px; text-align: center; border-bottom: 2px solid #333333; padding-bottom: 15px; }
+            .title { font-size: 14pt; font-weight: bold; margin-bottom: 5px; color: #111; text-transform: uppercase; }
+            .subtitle { font-size: 12pt; font-weight: bold; margin-bottom: 10px; color: #444; }
+            .period { font-size: 10pt; color: #666; font-weight: bold; text-transform: uppercase; }
+            .img-box { width: 150px; max-width: 150px; border: 1px solid #dddddd; margin: 3px; display: inline-block; }
         </style>
         </head><body>`;
     
@@ -325,23 +440,25 @@ window.exportToWord = async function() {
         <div class="header-info">
             <div class="title">LAPORAN MONITORING CLEANING SERVICE</div>
             <div class="subtitle">CS PLN ULP MANTINGAN</div>
-            <p>PERIODE: ${periodStr}</p>
+            <div class="period">PERIODE: ${periodStr}</div>
         </div>
         <table>
             <thead>
                 <tr>
-                    <th style="width: 30px;">NO</th>
-                    <th style="width: 80px;">TANGGAL</th>
-                    <th style="width: 100px;">PETUGAS</th>
-                    <th style="width: 100px;">KATEGORI</th>
-                    <th>DESKRIPSI PEKERJAAN</th>
-                    <th style="width: 180px;">BUKTI FOTO</th>
+                    <th style="width: 30px; border: 1px solid #333333; padding: 10px; font-size: 9pt; text-align: center; background-color: #f2f2f2; font-weight: bold;">NO</th>
+                    <th style="width: 100px; border: 1px solid #333333; padding: 10px; font-size: 9pt; text-align: left; background-color: #f2f2f2; font-weight: bold;">TANGGAL</th>
+                    <th style="width: 100px; border: 1px solid #333333; padding: 10px; font-size: 9pt; text-align: left; background-color: #f2f2f2; font-weight: bold;">PETUGAS</th>
+                    <th style="width: 100px; border: 1px solid #333333; padding: 10px; font-size: 9pt; text-align: left; background-color: #f2f2f2; font-weight: bold;">KATEGORI</th>
+                    <th style="border: 1px solid #333333; padding: 10px; font-size: 9pt; text-align: left; background-color: #f2f2f2; font-weight: bold;">DESKRIPSI PEKERJAAN</th>
+                    <th style="width: 220px; border: 1px solid #333333; padding: 10px; font-size: 9pt; text-align: center; background-color: #f2f2f2; font-weight: bold;">BUKTI FOTO</th>
                 </tr>
             </thead>
             <tbody>`;
 
-    for (let i = 0; i < currentData.length; i++) {
-        const item = currentData[i];
+    const sortedDocsWord = sortReports(currentData);
+
+    for (let i = 0; i < sortedDocsWord.length; i++) {
+        const item = sortedDocsWord[i];
         const photos = item.photos || [];
         let imagesHtml = [];
 
@@ -349,19 +466,21 @@ window.exportToWord = async function() {
             for (const url of photos) {
                 const base64 = await getBase64FromUrl(url);
                 if (base64) {
-                    imagesHtml.push(`<img src="${base64}" class="img-box" style="margin-bottom: 5px;" />`);
+                    imagesHtml.push(`<img src="${base64}" class="img-box" width="150" style="width: 150px; max-width: 150px; height: auto; border: 1px solid #ddd; margin: 3px; display: inline-block;" />`);
                 }
             }
         }
 
         tableHtml += `
             <tr>
-                <td style="text-align:center;">${i + 1}</td>
-                <td>${item.formattedDate}</td>
-                <td><b>${item.cleanerName}</b></td>
-                <td>${item.category}</td>
-                <td>${item.description || '-'}</td>
-                <td style="text-align:center;">${imagesHtml.length > 0 ? imagesHtml.join('') : 'No Photo'}</td>
+                <td style="border: 1px solid #333333; padding: 8px; font-size: 8pt; text-align: center;">${i + 1}</td>
+                <td style="border: 1px solid #333333; padding: 8px; font-size: 8pt;">${item.formattedDate}</td>
+                <td style="border: 1px solid #333333; padding: 8px; font-size: 8pt; font-weight: bold;">${item.cleanerName}</td>
+                <td style="border: 1px solid #333333; padding: 8px; font-size: 8pt; text-transform: uppercase;">${item.category}</td>
+                <td style="border: 1px solid #333333; padding: 8px; font-size: 8pt;">${item.description || '-'}</td>
+                <td style="border: 1px solid #333333; padding: 8px; font-size: 8pt; text-align: center;">
+                    ${imagesHtml.length > 0 ? imagesHtml.join('') : '<span style="color: #ccc;">No Photo</span>'}
+                </td>
             </tr>`;
     }
 
@@ -376,7 +495,7 @@ window.exportToWord = async function() {
 
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `Laporan_CS_PLN_${startDate.replace(/-/g, '')}.doc`;
+    link.download = `Laporan_CS_PLN_${startDate ? startDate.replace(/-/g, '') : 'all'}.doc`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -389,7 +508,7 @@ window.exportToWord = async function() {
 // FUNGSI EKSPOR KE PDF DENGAN TAMPILAN TABEL (MIRIP WORD)
 window.exportToPDF = async function() {
     if (currentData.length === 0) {
-        alert("Tidak ada data untuk diekspor. Silakan filter data terlebih dahulu.");
+        alert("Tidak ada data untuk diekspor. Silakan ubah filter periode atau petugas.");
         return;
     }
 
@@ -402,7 +521,7 @@ window.exportToPDF = async function() {
 
     const startDate = document.getElementById('report-start-date').value;
     const endDate = document.getElementById('report-end-date').value;
-    const periodStr = `${startDate} s/d ${endDate}`;
+    const periodStr = `${formatIndonesianDate(startDate)} s/d ${formatIndonesianDate(endDate)}`;
 
     let printHtml = `
         <div style="font-family: 'Inter', sans-serif; padding: 20px;">
@@ -415,7 +534,7 @@ window.exportToPDF = async function() {
                 <thead>
                     <tr style="background-color: #f2f2f2;">
                         <th style="border: 1px solid #333; padding: 10px; font-size: 9pt; text-align: center; width: 30px;">NO</th>
-                        <th style="border: 1px solid #333; padding: 10px; font-size: 9pt; text-align: left; width: 80px;">TANGGAL</th>
+                        <th style="border: 1px solid #333; padding: 10px; font-size: 9pt; text-align: left; width: 120px;">TANGGAL</th>
                         <th style="border: 1px solid #333; padding: 10px; font-size: 9pt; text-align: left; width: 100px;">PETUGAS</th>
                         <th style="border: 1px solid #333; padding: 10px; font-size: 9pt; text-align: left; width: 100px;">KATEGORI</th>
                         <th style="border: 1px solid #333; padding: 10px; font-size: 9pt; text-align: left;">DESKRIPSI PEKERJAAN</th>
@@ -425,8 +544,10 @@ window.exportToPDF = async function() {
                 <tbody>
     `;
 
-    for (let i = 0; i < currentData.length; i++) {
-        const item = currentData[i];
+    const sortedDocsPDF = sortReports(currentData);
+
+    for (let i = 0; i < sortedDocsPDF.length; i++) {
+        const item = sortedDocsPDF[i];
         const photos = item.photos || [];
         let imagesHtml = [];
 
@@ -479,8 +600,8 @@ window.exportToPDF = async function() {
             <head>
                 <title>Laporan_CS_PLN</title>
                 <style>
-                    @page { size: auto; margin: 15mm; }
-                    body { margin: 0; }
+                    @page { size: auto; margin: 0mm; }
+                    body { margin: 15mm; }
                     /* Optimasi untuk cetak */
                     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                 </style>
@@ -503,14 +624,63 @@ window.exportToPDF = async function() {
     }, 1500);
 }
 
+// LIGHTBOX CONTROLS
+window.openLightbox = function(url) {
+    const lightbox = document.getElementById('photo-lightbox');
+    const image = document.getElementById('lightbox-img');
+    if (!lightbox || !image) return;
+
+    // Use weserv proxy for instant loading and bypass provider blocking in Indonesia
+    let targetUrl = url;
+    if (url && (url.startsWith('http://') || url.startsWith('https://')) && !url.includes('images.weserv.nl')) {
+        targetUrl = `https://images.weserv.nl/?url=${encodeURIComponent(url)}`;
+    }
+
+    image.src = targetUrl;
+    image.onerror = function() {
+        if (targetUrl !== url) {
+            image.src = url; // Fallback
+        }
+    };
+    lightbox.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+}
+
+window.closeLightbox = function() {
+    const lightbox = document.getElementById('photo-lightbox');
+    if (lightbox) lightbox.classList.add('hidden');
+}
+
 window.loadReportData = loadReportData;
 
 document.addEventListener("DOMContentLoaded", async () => {
     await loadComponents();
     
-    // Default: 7 Hari terakhir
-    window.setQuickDateRange(7);
+    // Default: Hari ini saja (1 hari)
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+    
+    const startInput = document.getElementById('report-start-date');
+    const endInput = document.getElementById('report-end-date');
+    
+    if (startInput) startInput.value = todayStr;
+    if (endInput) endInput.value = todayStr;
     
     await populateUserFilter();
+    
+    // Register change listeners for auto-filtering
+    const filterSelectors = ["report-user", "report-category", "report-start-date", "report-end-date", "report-limit"];
+    filterSelectors.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener("change", () => {
+                loadReportData();
+            });
+        }
+    });
+
     loadReportData();
 });
